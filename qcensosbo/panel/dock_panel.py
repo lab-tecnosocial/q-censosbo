@@ -3,9 +3,9 @@ Panel lateral del plugin Q-CensosBo.
 
 Controles:
   - Año / Tabla / Nivel / Departamento
-  - Variable (todas las columnas del parquet, leídas del schema)
-  - Agregación: Conteo | Media | Suma | % de categoría
-  - Categoría (visible solo con "% de categoría", con etiquetas del codebook)
+  - Variable (todas las columnas del parquet, leídas del schema; muestra el tipo abreviado)
+  - Agregación según tipo: categórica → Porcentaje | Moda; numérica → Media | Mediana | Suma | Desviación
+  - Categoría (visible solo con "Porcentaje", con etiquetas del codebook)
 
 Velocidad:
   - Con DuckDB: consulta remota sin descarga
@@ -37,6 +37,9 @@ from ..core.aggregator import (
 # Mapeo del 'tipo' del diccionario al tipo interno usado por el panel.
 TIPO_MAP = {"categorica": "categorical", "texto": "categorical", "numerica": "numeric"}
 
+# Abreviatura del tipo para mostrar junto al nombre de la variable.
+TIPO_ABBR = {"categorica": "cat", "numerica": "num", "texto": "txt"}
+
 DEPTOS = [
     ("Todos los departamentos", None),
     ("Chuquisaca (01)", "01"), ("La Paz (02)", "02"),
@@ -51,6 +54,19 @@ GEO_COLS = {"idep", "iprov", "imun", "i00", "area_cod", "ubigeo",
             "mun", "municipio", "cod_mun", "comun"}
 
 
+def _plugin_version():
+    """Lee version= de metadata.txt (fuente de verdad). '' si no se puede leer."""
+    meta = os.path.join(os.path.dirname(os.path.dirname(__file__)), "metadata.txt")
+    try:
+        with open(meta, encoding="utf-8") as f:
+            for line in f:
+                if line.strip().startswith("version="):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return ""
+
+
 def _is_geo_or_technical(col):
     """Columnas a ocultar del selector de variables: geográficas y técnicas
     (claves de join *_REF_ID, REDCODEN) que no son variables de análisis."""
@@ -58,15 +74,6 @@ def _is_geo_or_technical(col):
     return (c in GEO_COLS
             or c.endswith("_ref_id")
             or c in ("redcoden",))
-
-AGG_OPTIONS = [
-    ("Conteo",                     "__count__"),
-    ("Media (promedio)",           "mean"),
-    ("Mediana",                    "median"),
-    ("Suma",                       "sum"),
-    ("Desviación estándar",        "std"),
-    ("Moda (valor más frecuente)", "mode"),
-]
 
 VAR_LABELS = {
     "p25_sexo": "Sexo", "p26_edad": "Edad en años",
@@ -88,11 +95,6 @@ VAR_LABELS = {
     "p02_sexo": "Sexo", "p03_edadanios": "Edad en años",
     "p14_nivinstru": "Nivel de instrucción",
 }
-
-
-def _var_label(col):
-    desc = VAR_LABELS.get(col)
-    return f"{col} — {desc}" if desc else col
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -249,6 +251,13 @@ class CensosBOPanel(QDockWidget):
         lbl_title.setAlignment(Qt.AlignCenter)
         main.addWidget(lbl_title)
 
+        _ver = _plugin_version()
+        if _ver:
+            lbl_version = QLabel(f"v{_ver}")
+            lbl_version.setObjectName("lbl_hint")
+            lbl_version.setAlignment(Qt.AlignCenter)
+            main.addWidget(lbl_version)
+
         lbl_years = QLabel("Datos: 1976 · 1992 · 2001 · 2012 · 2024")
         lbl_years.setObjectName("lbl_hint")
         lbl_years.setAlignment(Qt.AlignCenter)
@@ -319,9 +328,8 @@ class CensosBOPanel(QDockWidget):
         self.lbl_var_desc.setVisible(False)
         form_analisis.addRow(self.lbl_var_desc)
 
+        # Las opciones las define _update_agg_for_type según el tipo de variable.
         self.combo_agg = QComboBox()
-        for lbl, key in AGG_OPTIONS:
-            self.combo_agg.addItem(lbl, key)
         form_analisis.addRow("Agregación:", self.combo_agg)
 
         CLASIFICACION_OPTIONS = [
@@ -748,16 +756,15 @@ class CensosBOPanel(QDockWidget):
 
         if var_type == "categorical":
             options = [
-                ("Moda (categoría más frecuente)", "mode"),
-                ("Porcentaje de una categoría",    "pct_category"),
+                ("Porcentaje", "pct_category"),
+                ("Moda",       "mode"),
             ]
-        else:  # numeric
+        else:  # numeric — solo resúmenes del valor (Conteo cuenta población, no el valor)
             options = [
-                ("Media (promedio)",     "mean"),
+                ("Media",               "mean"),
                 ("Mediana",             "median"),
                 ("Suma",                "sum"),
                 ("Desviación estándar", "std"),
-                ("Conteo",              "__count__"),
             ]
 
         for lbl, key in options:
@@ -822,7 +829,9 @@ class CensosBOPanel(QDockWidget):
             if not _is_geo_or_technical(col):
                 # Priorizar descripción del codebook, luego VAR_LABELS, luego solo el nombre
                 desc = descriptions.get(col) or VAR_LABELS.get(col)
-                label = f"{col} — {desc}" if desc else col
+                abbr = TIPO_ABBR.get((types.get(col) or "").lower())
+                name = f"{col} ({abbr})" if abbr else col
+                label = f"{name} — {desc}" if desc else name
                 self.combo_variable.addItem(label, col)
 
         idx = self.combo_variable.findData(current)
