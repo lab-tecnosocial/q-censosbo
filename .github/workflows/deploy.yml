@@ -1,48 +1,27 @@
-name: Release y sitio
+name: Sitio y manifiesto
 
+# Reconstruye docs + plugins.xml y los publica en Pages. plugins.xml apunta su
+# download_url al asset del Release de la versión en metadata.txt (siempre el
+# último release), así que cualquier deploy produce un manifiesto válido.
 on:
   push:
     branches: [main]
-    tags: ['v*']
+  release:
+    types: [published]   # tras crear un Release (release.yml), redespliega con el asset ya disponible
   workflow_dispatch:
 
 permissions:
-  contents: write   # crear el GitHub Release y subirle el ZIP
-  pages: write      # publicar en GitHub Pages
+  pages: write
   id-token: write
 
-# Encola los despliegues en vez de cancelarlos: no aborta un release a medias.
+# Los deploys se encolan; como todos producen el mismo plugins.xml, da igual cuál
+# gane la cola. El Release lo crea release.yml, que no comparte este grupo.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  # 1) Solo en tags v*: empaqueta el plugin y lo publica como asset del Release.
-  #    El ZIP vive en el Release (URL estable), no en Pages, así no se cae al
-  #    redesplegar el sitio.
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-      - name: Empaquetar plugin
-        run: python scripts/build_release.py --zip-only
-      - name: Crear Release y subir el ZIP
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" dist/qcensosbo.zip \
-            --title "$GITHUB_REF_NAME" --generate-notes
-
-  # 2) Siempre: genera plugins.xml (download_url → asset del último release) y el
-  #    sitio. Espera al job 'release' para que el asset exista antes de publicar
-  #    el manifiesto que lo referencia.
   pages:
-    needs: [release]
-    if: ${{ !cancelled() && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

@@ -1,0 +1,28 @@
+name: Release del plugin
+
+# Workflow aislado: crea el GitHub Release con el ZIP como asset. Vive aparte del
+# de Pages y SIN concurrency con él, para que el job que crea el Release nunca
+# pueda ser cancelado por la cola del grupo 'pages'.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Empaquetar plugin
+        run: python scripts/build_release.py --zip-only
+      - name: Crear Release y subir el ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/qcensosbo.zip \
+            --title "$GITHUB_REF_NAME" --generate-notes
