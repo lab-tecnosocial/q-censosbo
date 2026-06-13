@@ -1,0 +1,17 @@
+[general]
+name=Q-CensosBo
+qgisMinimumVersion=3.28
+description=Explora y visualiza los microdatos de los censos de Bolivia (1976-2024) directamente en QGIS
+about=Plugin para acceder a los microdatos censales de Bolivia del paquete censosbo. Permite descargar datos por año y tabla, filtrar por departamento, ver resúmenes estadísticos en el panel lateral y generar mapas coropléticos de forma inmediata.
+version=0.1.0
+author=Alex Ojeda Copa
+email=alex@labtecnosocial.org
+repository=https://github.com/lab-tecnosocial/q-censosbo
+tracker=https://github.com/lab-tecnosocial/q-censosbo/issues
+tags=censo,bolivia,demografía,parquet,coroplético,INE
+homepage=https://lab-tecnosocial.github.io/q-censosbo/
+category=Vector
+icon=icon.png
+experimental=False
+deprecated=False
+server=False

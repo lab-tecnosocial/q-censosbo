@@ -1,0 +1,159 @@
+/* ============================================================
+   Censos Bolivia — Compatible con modo claro y oscuro de QGIS
+   Solo estilos estructurales; colores heredados del tema del sistema.
+   ============================================================ */
+
+QGroupBox {
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    margin-top: 10px;
+    padding: 8px;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 4px;
+}
+
+QComboBox {
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    min-height: 22px;
+}
+
+QComboBox:focus {
+    border: 2px solid palette(highlight);
+    padding: 3px 7px;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 22px;
+}
+
+QLabel {
+    font-size: 11px;
+}
+
+QLabel#lbl_hint {
+    font-size: 10px;
+    font-style: italic;
+}
+
+QLabel#lbl_stat_value {
+    font-weight: bold;
+    font-size: 12px;
+}
+
+QLabel#lbl_section {
+    font-weight: bold;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+QLabel#lbl_var_desc {
+    font-size: 10px;
+    font-style: italic;
+}
+
+QProgressBar#progress_descarga {
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    text-align: center;
+    font-size: 10px;
+    max-height: 14px;
+}
+
+QProgressBar#progress_descarga::chunk {
+    background-color: palette(highlight);
+    border-radius: 3px;
+}
+
+QProgressBar#stat_bar {
+    border: none;
+    border-radius: 2px;
+    background-color: palette(midlight);
+    text-align: center;
+    font-size: 9px;
+    max-height: 14px;
+}
+
+QProgressBar#stat_bar::chunk {
+    background-color: palette(highlight);
+    border-radius: 2px;
+}
+
+QPushButton#btn_clear_cache {
+    border: none;
+    font-size: 10px;
+    color: palette(mid);
+    padding: 2px 6px;
+    text-decoration: underline;
+}
+
+QPushButton#btn_clear_cache:hover {
+    color: palette(text);
+}
+
+QPushButton#btn_consultar {
+    border: 1px solid palette(highlight);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 11px;
+    min-height: 28px;
+}
+
+QPushButton#btn_consultar:hover {
+    background-color: palette(midlight);
+}
+
+QPushButton#btn_consultar:disabled {
+    border-color: palette(mid);
+    color: palette(mid);
+}
+
+QPushButton#btn_generar {
+    background-color: #1a3a5c;
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    padding: 9px 16px;
+    font-size: 12px;
+    font-weight: bold;
+    min-height: 36px;
+}
+
+QPushButton#btn_generar:hover {
+    background-color: #2a5a8c;
+}
+
+QPushButton#btn_generar:pressed {
+    background-color: #0f2540;
+}
+
+QPushButton#btn_generar:disabled {
+    background-color: palette(mid);
+    color: palette(midlight);
+}
+
+QFrame[frameShape="4"],
+QFrame[frameShape="5"] {
+    color: palette(mid);
+}
+
+QPlainTextEdit {
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: monospace;
+}
+
+QPlainTextEdit:focus {
+    border: 2px solid palette(highlight);
+}

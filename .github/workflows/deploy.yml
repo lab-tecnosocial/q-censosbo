@@ -1,0 +1,70 @@
+name: Sitio y plugin
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write     # crear GitHub Releases en tags
+  pages: write        # publicar en GitHub Pages
+  id-token: write     # autenticación de deploy-pages
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Instalar MkDocs Material
+        run: pip install mkdocs-material
+
+      - name: Empaquetar plugin (qcensosbo.zip + plugins.xml)
+        run: python scripts/build_release.py
+
+      - name: Construir el sitio
+        run: mkdocs build --site-dir site
+
+      - name: Copiar ZIP y manifiesto al sitio
+        run: cp dist/qcensosbo.zip dist/plugins.xml site/
+
+      - name: Subir artefacto de Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Empaquetar plugin
+        run: python scripts/build_release.py
+      - name: Publicar Release con el ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/qcensosbo.zip
+          generate_release_notes: true

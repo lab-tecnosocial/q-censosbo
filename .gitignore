@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# Artefactos generados (los crea build_release.py / CI)
+dist/
+site/
+
+# Caché local de datos del plugin
+.censosbo_qgis/
+
+# Notas de desarrollo (no se publican)
+dev-docs/
