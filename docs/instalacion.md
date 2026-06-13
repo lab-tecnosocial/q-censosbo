@@ -9,7 +9,14 @@
 
 ---
 
-## Método A — Repositorio de complementos (recomendado)
+## Método A — Instalar desde ZIP
+
+1. [Descarga el ZIP](https://lab-tecnosocial.github.io/q-censosbo/qcensosbo.zip).
+2. En QGIS: **Complementos → Administrar e instalar complementos… → Instalar a partir de ZIP**.
+3. Selecciona el archivo `qcensosbo.zip` descargado e **Instalar**.
+
+---
+## Método B — Repositorio de complementos
 
 Permite instalar y **actualizar desde el propio QGIS**.
 
@@ -23,14 +30,6 @@ Permite instalar y **actualizar desde el propio QGIS**.
 3. Acepta. Vuelve a la pestaña **Todos** o **No instalados**, busca **Q-CensosBo** e
    **Instala el complemento**.
 4. Cuando publiquemos una versión nueva, QGIS te avisará para actualizar.
-
----
-
-## Método B — Instalar desde ZIP
-
-1. [Descarga el ZIP](https://lab-tecnosocial.github.io/q-censosbo/qcensosbo.zip).
-2. En QGIS: **Complementos → Administrar e instalar complementos… → Instalar a partir de ZIP**.
-3. Selecciona el archivo `qcensosbo.zip` descargado e **Instalar**.
 
 ---
 

@@ -1,14 +1,16 @@
 # Q-CensosBo
 
-Complemento de **QGIS** para explorar y mapear los microdatos de los censos de población de
-Bolivia (**1976, 1992, 2001, 2012 y 2024**) directamente sobre el mapa, sin descargar archivos
-pesados.
+<p align="center">
+  <img src="logo.png" alt="Q-CensosBo" width="120">
+</p>
 
-📖 **Sitio y documentación:** <https://lab-tecnosocial.github.io/q-censosbo/>
+Plugin de **QGIS** para consultar y mapear los microdatos de los censos de población de
+Bolivia (**1976, 1992, 2001, 2012 y 2024**) directamente dentro de QGIS, sin descargar archivos
+pesados. Basado en el trabajo del paquete de R [**censosbo**](https://github.com/lab-tecnosocial/censosbo)
 
 ## Qué hace
 
-- Consulta los microdatos (en GitHub Releases) de forma remota y veloz con DuckDB.
+- Consulta los microdatos de forma remota y veloz con DuckDB.
 - Calcula indicadores por **departamento** o **municipio**: conteo, media, mediana, suma,
   desviación, moda y porcentaje de una categoría.
 - Reconoce variables categóricas y numéricas y muestra etiquetas legibles.
@@ -16,28 +18,29 @@ pesados.
 
 ## Instalación
 
-**Método A — Repositorio QGIS (recomendado, con auto-actualización):**
-en QGIS → *Complementos → Administrar e instalar… → Configuración → Repositorios → Añadir*:
-
-```
-https://lab-tecnosocial.github.io/q-censosbo/plugins.xml
-```
-
-Luego busca **Q-CensosBo** en la lista e instálalo.
-
-**Método B — ZIP:** descarga
+**Método A — ZIP:** descarga
 [`qcensosbo.zip`](https://lab-tecnosocial.github.io/q-censosbo/qcensosbo.zip) e instálalo con
 *Complementos → Instalar a partir de ZIP*.
 
+**Método B — Repositorio QGIS (recomendado, con auto-actualización):**
+en QGIS → *Complementos → Administrar e instalar… → Configuración → Repositorios → Añadir*:
+```
+https://lab-tecnosocial.github.io/q-censosbo/plugins.xml
+```
+Luego busca **Q-CensosBo** en la lista e instálalo.
+
+
 Requisitos: QGIS ≥ 3.28 e internet. DuckDB se instala solo la primera vez.
 
-Guía de uso completa en la [documentación](https://lab-tecnosocial.github.io/q-censosbo/uso/).
+## Documentación
+
+Guía completa en: https://lab-tecnosocial.github.io/q-censosbo/
 
 ## Datos
 
 Microdatos del paquete [**censosbo**](https://github.com/lab-tecnosocial/censosbo) (censos de
-Bolivia, formato Parquet). Detalle de fuentes, niveles y notas en la
-[documentación](https://lab-tecnosocial.github.io/q-censosbo/datos/).
+Bolivia, formato Parquet).
+
 
 ## Licencia
 

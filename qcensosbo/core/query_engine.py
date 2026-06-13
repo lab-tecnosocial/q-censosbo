@@ -13,6 +13,7 @@ DuckDB se instala automáticamente en la primera apertura del panel (no requiere
 acción del usuario más allá de instalar el plugin).
 """
 
+import os
 import subprocess
 import sys
 import threading
@@ -29,6 +30,7 @@ from .data_loader import (
 
 _duckdb = None
 _duckdb_checked = False
+_hard_exit_registered = False
 _schema_cache = {}   # {(url, "__cols__"): {col_lower: col_real}}
 
 NO_MUNICIPIO_MSG = (
@@ -45,9 +47,41 @@ def _try_duckdb():
     try:
         import duckdb
         _duckdb = duckdb
+        _register_hard_exit()
     except ImportError:
         _duckdb = None
     return _duckdb
+
+
+def _register_hard_exit():
+    """Evita el SIGABRT de DuckDB al cerrar QGIS.
+
+    Una vez cargada, la librería `_duckdb.so` ejecuta destructores estáticos en
+    `__cxa_finalize` (al hacer `exit()`) que invocan `PyEval_SaveThread` cuando el
+    intérprete de Python YA finalizó → `abort()`. No hay forma de evitarlo desde
+    Python cerrando conexiones (todas se cierran y aun así ocurre). La salida
+    fiable es terminar el proceso con `os._exit()` al recibir `aboutToQuit` de Qt:
+    se ejecuta antes de que el proceso entre en `exit()` y dispare esos
+    destructores estáticos, saltándoselos.
+
+    Solo se registra si DuckDB llegó a importarse (las sesiones que no lo usan no
+    se ven afectadas). No interfiere con recargar el plugin: `aboutToQuit` solo
+    dispara al cerrar la aplicación, no en `unload()`.
+    """
+    global _hard_exit_registered
+    if _hard_exit_registered:
+        return
+    try:
+        from qgis.PyQt.QtCore import QCoreApplication
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(lambda: os._exit(0))
+        else:
+            raise RuntimeError("QCoreApplication no disponible")
+    except Exception:
+        import atexit
+        atexit.register(os._exit, 0)
+    _hard_exit_registered = True
 
 
 def duckdb_available():
@@ -598,29 +632,17 @@ def aggregate_custom_sql(urls, nivel, sql_expr):
 
 def cleanup():
     """
-    Libera el módulo DuckDB mientras Python aún está activo.
-    Llamar desde plugin.unload() para evitar el crash de DuckDB al cerrar QGIS
-    (DuckDB intenta liberar recursos después de que Python ya comenzó a apagarse).
+    Limpieza para la RECARGA del plugin (se llama desde `plugin.unload()`):
+    vacía cachés en memoria y fuerza un GC. No intenta resolver el crash al
+    CERRAR QGIS (ese es un destructor estático de la `.so` y lo maneja
+    `_register_hard_exit()` vía `aboutToQuit` de Qt).
     """
-    global _duckdb, _duckdb_checked, _schema_cache
     _schema_cache.clear()
-    # Forzar la recolección de cualquier conexión DuckDB pendiente ANTES de que
-    # Python finalice. Así se destruyen las instancias de base de datos mientras
-    # el GIL sigue vivo y se evita el SIGABRT del destructor estático al salir.
     try:
         import gc
         gc.collect()
     except Exception:
         pass
-    if _duckdb is not None:
-        try:
-            import sys
-            if "duckdb" in sys.modules:
-                del sys.modules["duckdb"]
-        except Exception:
-            pass
-        _duckdb = None
-    _duckdb_checked = False
 
 
 def download_parallel(anio, tabla, departamento=None, progress_cb=None):

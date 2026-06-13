@@ -1,5 +1,5 @@
 site_name: Q-CensosBo
-site_description: Plugin de QGIS para explorar y mapear los microdatos de los censos de Bolivia
+site_description: Plugin de QGIS para consultar y mapear los microdatos de los censos de Bolivia
 site_url: https://lab-tecnosocial.github.io/q-censosbo/
 repo_url: https://github.com/lab-tecnosocial/q-censosbo
 repo_name: lab-tecnosocial/q-censosbo
@@ -8,20 +8,22 @@ copyright: Lab Tecnosocial · GPL-3.0
 theme:
   name: material
   language: es
+  logo: assets/logo.png
+  favicon: assets/favicon.png
   icon:
     repo: fontawesome/brands/github
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: red
-      accent: red
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Cambiar a modo oscuro
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: red
-      accent: red
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Cambiar a modo claro
@@ -31,6 +33,9 @@ theme:
     - content.code.copy
     - search.suggest
     - search.highlight
+
+extra_css:
+  - assets/extra.css
 
 nav:
   - Inicio: index.md

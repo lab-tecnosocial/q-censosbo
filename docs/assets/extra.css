@@ -1,0 +1,15 @@
+/* Colores del logo Q-CensosBo */
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        #2D6624;
+  --md-primary-fg-color--light: #3d8a31;
+  --md-primary-fg-color--dark:  #1e4a18;
+  --md-accent-fg-color:         #C0392B;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #3d8a31;
+  --md-primary-fg-color--light: #4fa33c;
+  --md-primary-fg-color--dark:  #2D6624;
+  --md-accent-fg-color:         #e74c3c;
+}

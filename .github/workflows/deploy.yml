@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write     # crear GitHub Releases en tags
-  pages: write        # publicar en GitHub Pages
-  id-token: write     # autenticación de deploy-pages
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -28,14 +27,16 @@ jobs:
       - name: Instalar MkDocs Material
         run: pip install mkdocs-material
 
-      - name: Empaquetar plugin (qcensosbo.zip + plugins.xml)
-        run: python scripts/build_release.py
-
       - name: Construir el sitio
         run: mkdocs build --site-dir site
 
-      - name: Copiar ZIP y manifiesto al sitio
-        run: cp dist/qcensosbo.zip dist/plugins.xml site/
+      # El ZIP solo se incluye en Pages cuando hay un tag de versión.
+      # Así el ZIP publicado siempre corresponde a una versión real, no a commits intermedios.
+      - name: Empaquetar plugin (solo en tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python scripts/build_release.py
+          cp dist/qcensosbo.zip dist/plugins.xml site/
 
       - name: Subir artefacto de Pages
         uses: actions/upload-pages-artifact@v5
@@ -51,20 +52,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-      - name: Empaquetar plugin
-        run: python scripts/build_release.py
-      - name: Publicar Release con el ZIP
-        uses: softprops/action-gh-release@v3
-        with:
-          files: dist/qcensosbo.zip
-          generate_release_notes: true
