@@ -7,12 +7,16 @@ Produce dos archivos en dist/:
   - plugins.xml     → manifiesto del repositorio de complementos de QGIS
 
 Uso:
-    python scripts/build_release.py
+    python scripts/build_release.py            # genera ZIP y plugins.xml
+    python scripts/build_release.py --zip-only # solo el ZIP (job 'release' del CI)
+    python scripts/build_release.py --xml-only # solo plugins.xml (job 'pages' del CI)
 
-No requiere dependencias externas (solo la librería estándar). Lo usa también
-el workflow de GitHub Actions; reutilizable en local para probar el empaquetado.
+El ZIP se publica como asset de GitHub Releases; plugins.xml apunta su
+download_url a ese asset. Así la URL del ZIP nunca se cae aunque se redespliegue
+el sitio. No requiere dependencias externas (solo la librería estándar).
 """
 
+import argparse
 import configparser
 import zipfile
 from pathlib import Path
@@ -22,9 +26,13 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_DIR = ROOT / "qcensosbo"
 DIST = ROOT / "dist"
 
-# URL pública del ZIP en GitHub Pages (para auto-actualización desde QGIS)
-PAGES_BASE = "https://lab-tecnosocial.github.io/q-censosbo"
-DOWNLOAD_URL = f"{PAGES_BASE}/qcensosbo.zip"
+# El ZIP se sirve como asset del GitHub Release de cada versión (URL estable que
+# no depende de Pages). plugins.xml apunta aquí para la auto-actualización de QGIS.
+REPO_BASE = "https://github.com/lab-tecnosocial/q-censosbo"
+
+
+def download_url(version):
+    return f"{REPO_BASE}/releases/download/v{version}/qcensosbo.zip"
 
 EXCLUDE_DIRS = {"__pycache__"}
 EXCLUDE_NAMES = {".DS_Store"}
@@ -76,7 +84,7 @@ def build_plugins_xml(meta):
     <experimental>{g('experimental', 'False')}</experimental>
     <deprecated>{g('deprecated', 'False')}</deprecated>
     <file_name>qcensosbo.zip</file_name>
-    <download_url>{DOWNLOAD_URL}</download_url>
+    <download_url>{download_url(g('version'))}</download_url>
   </pyqgis_plugin>
 </plugins>
 """
@@ -87,9 +95,17 @@ def build_plugins_xml(meta):
 
 
 def main():
-    meta = read_metadata()
-    build_zip()
-    build_plugins_xml(meta)
+    parser = argparse.ArgumentParser(description="Empaqueta el plugin Q-CensosBo.")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--zip-only", action="store_true", help="genera solo qcensosbo.zip")
+    group.add_argument("--xml-only", action="store_true", help="genera solo plugins.xml")
+    args = parser.parse_args()
+
+    DIST.mkdir(exist_ok=True)
+    if not args.xml_only:
+        build_zip()
+    if not args.zip_only:
+        build_plugins_xml(read_metadata())
     print("Listo. Artefactos en dist/")
 
 

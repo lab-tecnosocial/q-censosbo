@@ -123,7 +123,7 @@ def main():
     print("5/5 Push a origin…")
     run("git push origin main --tags")
 
-    print(f"\n✓ v{new_ver} publicada. El CI construye el ZIP y el sitio.")
+    print(f"\n✓ v{new_ver} publicada. El CI crea el Release con el ZIP y despliega el sitio.")
     print(f"  https://github.com/lab-tecnosocial/q-censosbo/actions")
 
 

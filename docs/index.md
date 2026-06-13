@@ -4,7 +4,7 @@
 censos de población de Bolivia (**1976, 1992, 2001, 2012 y 2024**) directamente sobre el mapa,
 sin tener que descargar archivos pesados.
 
-[Descargar plugin (.zip)](https://lab-tecnosocial.github.io/q-censosbo/qcensosbo.zip){ .md-button .md-button--primary }
+[Descargar plugin (.zip)](https://github.com/lab-tecnosocial/q-censosbo/releases/latest/download/qcensosbo.zip){ .md-button .md-button--primary }
 [Cómo instalar](instalacion.md){ .md-button }
 
 ## Qué hace

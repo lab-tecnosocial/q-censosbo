@@ -1,4 +1,4 @@
-name: Sitio y plugin
+name: Release y sitio
 
 on:
   push:
@@ -7,48 +7,63 @@ on:
   workflow_dispatch:
 
 permissions:
-  pages: write
+  contents: write   # crear el GitHub Release y subirle el ZIP
+  pages: write      # publicar en GitHub Pages
   id-token: write
 
+# Encola los despliegues en vez de cancelarlos: no aborta un release a medias.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build:
+  # 1) Solo en tags v*: empaqueta el plugin y lo publica como asset del Release.
+  #    El ZIP vive en el Release (URL estable), no en Pages, así no se cae al
+  #    redesplegar el sitio.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
+      - name: Empaquetar plugin
+        run: python scripts/build_release.py --zip-only
+      - name: Crear Release y subir el ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/qcensosbo.zip \
+            --title "$GITHUB_REF_NAME" --generate-notes
 
+  # 2) Siempre: genera plugins.xml (download_url → asset del último release) y el
+  #    sitio. Espera al job 'release' para que el asset exista antes de publicar
+  #    el manifiesto que lo referencia.
+  pages:
+    needs: [release]
+    if: ${{ !cancelled() && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
       - name: Instalar MkDocs Material
         run: pip install mkdocs-material
-
-      # El ZIP se construye antes de mkdocs para que MkDocs lo incluya como asset estático.
-      # En push a main sin tag, este paso se salta y el ZIP del release anterior permanece en Pages.
-      - name: Empaquetar plugin (solo en tags v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Generar plugins.xml
         run: |
-          python scripts/build_release.py
-          cp dist/qcensosbo.zip dist/plugins.xml docs/
-
+          python scripts/build_release.py --xml-only
+          cp dist/plugins.xml docs/
       - name: Construir el sitio
         run: mkdocs build --site-dir site
-
-      - name: Limpiar ZIPs copiados a docs/ (no deben commitearse)
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: rm -f docs/qcensosbo.zip docs/plugins.xml
-
       - name: Subir artefacto de Pages
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
   deploy:
-    needs: build
+    needs: [pages]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

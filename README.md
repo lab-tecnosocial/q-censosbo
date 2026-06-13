@@ -19,7 +19,7 @@ pesados. Basado en el trabajo del paquete de R [**censosbo**](https://github.com
 ## Instalación
 
 **Método A — ZIP:** descarga
-[`qcensosbo.zip`](https://lab-tecnosocial.github.io/q-censosbo/qcensosbo.zip) e instálalo con
+[`qcensosbo.zip`](https://github.com/lab-tecnosocial/q-censosbo/releases/latest/download/qcensosbo.zip) e instálalo con
 *Complementos → Instalar a partir de ZIP*.
 
 **Método B — Repositorio QGIS (recomendado, con auto-actualización):**
