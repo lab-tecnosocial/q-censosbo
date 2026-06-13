@@ -1,9 +1,18 @@
 # Q-CensosBo
 
 Complemento de **QGIS** para explorar y mapear los microdatos de los censos de población de
-Bolivia (**1976, 1992, 2001, 2012 y 2024**) directamente sobre el mapa.
+Bolivia (**1976, 1992, 2001, 2012 y 2024**) directamente sobre el mapa, sin descargar archivos
+pesados.
 
 📖 **Sitio y documentación:** <https://lab-tecnosocial.github.io/q-censosbo/>
+
+## Qué hace
+
+- Consulta los microdatos (en GitHub Releases) de forma remota y veloz con DuckDB.
+- Calcula indicadores por **departamento** o **municipio**: conteo, media, mediana, suma,
+  desviación, moda y porcentaje de una categoría.
+- Reconoce variables categóricas y numéricas y muestra etiquetas legibles.
+- Genera mapas coropléticos con leyenda apropiada y un resumen del resultado.
 
 ## Instalación
 
@@ -22,45 +31,13 @@ Luego busca **Q-CensosBo** en la lista e instálalo.
 
 Requisitos: QGIS ≥ 3.28 e internet. DuckDB se instala solo la primera vez.
 
-## Estructura del repositorio
+Guía de uso completa en la [documentación](https://lab-tecnosocial.github.io/q-censosbo/uso/).
 
-```
-qcensosbo/              El plugin (código + geometrías). Es lo que se empaqueta en el ZIP.
-docs/                   Sitio/documentación (MkDocs Material).
-scripts/build_release.py   Empaqueta qcensosbo/ → dist/qcensosbo.zip y genera dist/plugins.xml.
-.github/workflows/      CI: construye el sitio + ZIP y publica en GitHub Pages.
-mkdocs.yml              Configuración del sitio.
-```
+## Datos
 
-## Desarrollo
-
-Enlaza el plugin a tu perfil de QGIS (macOS):
-
-```bash
-ln -s "$(pwd)/qcensosbo" \
-  "$HOME/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/qcensosbo"
-```
-
-Empaquetar localmente (genera `dist/qcensosbo.zip` y `dist/plugins.xml`):
-
-```bash
-python scripts/build_release.py
-```
-
-Previsualizar el sitio:
-
-```bash
-pip install mkdocs-material
-mkdocs serve
-```
-
-## Publicación
-
-- Cada *push* a `main` reconstruye el sitio y el ZIP y los publica en GitHub Pages.
-- Para una versión: sube `version` en `qcensosbo/metadata.txt`, crea un tag `vX.Y.Z` y haz
-  push del tag → se publica un *GitHub Release* con el ZIP adjunto.
-
-> Tras el primer push, habilita una vez **Settings → Pages → Source: GitHub Actions**.
+Microdatos del paquete [**censosbo**](https://github.com/lab-tecnosocial/censosbo) (censos de
+Bolivia, formato Parquet). Detalle de fuentes, niveles y notas en la
+[documentación](https://lab-tecnosocial.github.io/q-censosbo/datos/).
 
 ## Licencia
 
