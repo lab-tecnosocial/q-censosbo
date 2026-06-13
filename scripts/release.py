@@ -80,7 +80,7 @@ def check_syntax():
         *ROOT.glob("qcensosbo/processing/algorithms/*.py"),
     ]
     files_str = " ".join(f'"{p}"' for p in py_files)
-    result = run(f"python -m py_compile {files_str}", check=False)
+    result = run(f'"{sys.executable}" -m py_compile {files_str}', check=False)
     if result.returncode != 0:
         abort(f"Error de sintaxis:\n{result.stderr.rstrip()}")
 
