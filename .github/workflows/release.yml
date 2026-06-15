@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.x'
       - name: Empaquetar plugin
-        run: python scripts/build_release.py --zip-only
+        run: python scripts/build_release.py
       - name: Crear Release y subir el ZIP
         env:
           GH_TOKEN: ${{ github.token }}

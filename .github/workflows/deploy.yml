@@ -1,21 +1,16 @@
-name: Sitio y manifiesto
+name: Sitio
 
-# Reconstruye docs + plugins.xml y los publica en Pages. plugins.xml apunta su
-# download_url al asset del Release de la versión en metadata.txt (siempre el
-# último release), así que cualquier deploy produce un manifiesto válido.
+# Reconstruye el sitio de documentación (MkDocs) y lo publica en Pages.
 on:
   push:
     branches: [main]
-  release:
-    types: [published]   # tras crear un Release (release.yml), redespliega con el asset ya disponible
   workflow_dispatch:
 
 permissions:
   pages: write
   id-token: write
 
-# Los deploys se encolan; como todos producen el mismo plugins.xml, da igual cuál
-# gane la cola. El Release lo crea release.yml, que no comparte este grupo.
+# Pages despliega por artefacto y reemplaza el sitio completo en cada deploy.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -30,10 +25,6 @@ jobs:
           python-version: '3.x'
       - name: Instalar MkDocs Material
         run: pip install mkdocs-material
-      - name: Generar plugins.xml
-        run: |
-          python scripts/build_release.py --xml-only
-          cp dist/plugins.xml docs/
       - name: Construir el sitio
         run: mkdocs build --site-dir site
       - name: Subir artefacto de Pages

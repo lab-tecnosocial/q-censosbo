@@ -18,17 +18,9 @@ pesados. Basado en el trabajo del paquete de R [**censosbo**](https://github.com
 
 ## Instalación
 
-**Método A — ZIP:** descarga
-[`qcensosbo.zip`](https://github.com/lab-tecnosocial/q-censosbo/releases/latest/download/qcensosbo.zip) e instálalo con
-*Complementos → Instalar a partir de ZIP*.
-
-**Método B — Repositorio QGIS (recomendado, con auto-actualización):**
-en QGIS → *Complementos → Administrar e instalar… → Configuración → Repositorios → Añadir*:
-```
-https://lab-tecnosocial.github.io/q-censosbo/plugins.xml
-```
-Luego busca **Q-CensosBo** en la lista e instálalo.
-
+Descarga
+[`qcensosbo.zip`](https://github.com/lab-tecnosocial/q-censosbo/releases/latest/download/qcensosbo.zip) e instálalo en QGIS con
+*Complementos → Administrar e instalar complementos… → Instalar a partir de ZIP*.
 
 Requisitos: QGIS ≥ 3.28 e internet. DuckDB se instala solo la primera vez.
 

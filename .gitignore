@@ -9,7 +9,6 @@ __pycache__/
 # Artefactos generados (los crea build_release.py / CI)
 dist/
 site/
-docs/plugins.xml
 
 # Caché local de datos del plugin
 .censosbo_qgis/
