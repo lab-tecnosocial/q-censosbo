@@ -8,8 +8,8 @@ Controles:
   - Categoría (visible solo con "Porcentaje", con etiquetas del codebook)
 
 Velocidad:
-  - Con DuckDB: consulta remota sin descarga
-  - Sin DuckDB: descarga paralela + pyarrow con proyección de columnas
+  - DuckDB es el único motor: consulta el parquet remoto sin descargarlo, o lee
+    el parquet local cacheado. Mismo SQL en ambos casos.
 """
 
 import os
@@ -20,22 +20,21 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QThread
 
-from ..core.data_loader import (
-    get_tables_for_year, get_cached_paths, is_cached,
-)
+from ..core.data_loader import get_tables_for_year
 from ..core.query_engine import (
     duckdb_available, install_duckdb,
     get_parquet_urls, get_first_url,
-    download_parallel, normalize_code,
+    normalize_code,
 )
 from ..core.aggregator import (
     agregar_datos, agregar_expresion, get_columns,
-    get_value_labels, get_var_descriptions, get_var_types, clear_caches,
+    get_value_labels, get_var_descriptions, get_var_types,
     resumen_nacional,
 )
 
 # Mapeo del 'tipo' del diccionario al tipo interno usado por el panel.
-TIPO_MAP = {"categorica": "categorical", "texto": "categorical", "numerica": "numeric"}
+TIPO_MAP = {"categorica": "categorical",
+            "texto": "categorical", "numerica": "numeric"}
 
 # Abreviatura del tipo para mostrar junto al nombre de la variable.
 TIPO_ABBR = {"categorica": "cat", "numerica": "num", "texto": "txt"}
@@ -56,7 +55,8 @@ GEO_COLS = {"idep", "iprov", "imun", "i00", "area_cod", "ubigeo",
 
 def _plugin_version():
     """Lee version= de metadata.txt (fuente de verdad). '' si no se puede leer."""
-    meta = os.path.join(os.path.dirname(os.path.dirname(__file__)), "metadata.txt")
+    meta = os.path.join(os.path.dirname(
+        os.path.dirname(__file__)), "metadata.txt")
     try:
         with open(meta, encoding="utf-8") as f:
             for line in f:
@@ -74,6 +74,7 @@ def _is_geo_or_technical(col):
     return (c in GEO_COLS
             or c.endswith("_ref_id")
             or c in ("redcoden",))
+
 
 VAR_LABELS = {
     "p25_sexo": "Sexo", "p26_edad": "Edad en años",
@@ -103,17 +104,18 @@ VAR_LABELS = {
 
 class InstallWorker(QThread):
     status = pyqtSignal(str)
-    finished = pyqtSignal(bool)
+    finished = pyqtSignal(bool, str)
 
     def run(self):
         install_duckdb(
             status_cb=lambda m: self.status.emit(m),
-            done_cb=lambda ok: self.finished.emit(ok),
+            done_cb=lambda ok, msg="": self.finished.emit(ok, msg),
         )
 
 
 class ColumnsWorker(QThread):
-    finished = pyqtSignal(list, dict, dict)   # columns, {var: desc}, {var: tipo}
+    # columns, {var: desc}, {var: tipo}
+    finished = pyqtSignal(list, dict, dict)
 
     def __init__(self, path_or_url, anio, tabla=None, remote=False):
         super().__init__()
@@ -132,12 +134,11 @@ class ColumnsWorker(QThread):
             self.finished.emit([], {}, {})
 
 
-
 class MapWorker(QThread):
     progress = pyqtSignal(int)
-    status   = pyqtSignal(str)
+    status = pyqtSignal(str)
     finished = pyqtSignal(object)
-    error    = pyqtSignal(str)
+    error = pyqtSignal(str)
 
     def __init__(self, anio, tabla, nivel, variable, agg, category,
                  departamento=None, sql_expr=None):
@@ -154,43 +155,39 @@ class MapWorker(QThread):
     def run(self):
         try:
             urls = get_parquet_urls(self.anio, self.tabla, self.departamento)
-            cached = get_cached_paths(self.anio, self.tabla, self.departamento)
             unidad = "departamento" if self.nivel == "departamento" else "municipio"
 
             # Expresión SQL: solo agregación por unidad (sin nacional/categorías)
             if self.sql_expr:
                 self.status.emit("Ejecutando consulta SQL en GitHub…")
                 self.progress.emit(10)
-                df = agregar_expresion(urls, self.nivel, self.sql_expr)
+                df = agregar_expresion(urls, self.nivel, self.sql_expr,
+                                       departamento=self.departamento)
                 self.progress.emit(95)
                 self.finished.emit({"df": df, "national": None})
                 return
 
-            # Elegir fuente de datos y modo (local cacheado / remoto / descarga)
-            if cached:
-                data, remote = cached, False
-                self.status.emit(f"Agregando datos locales por {unidad}…")
-            elif duckdb_available():
-                data, remote = urls, True
-                self.status.emit(f"Consultando GitHub (sin descarga) por {unidad}…")
-            else:
-                self.status.emit("Descargando datos del censo…")
-                data = download_parallel(
-                    self.anio, self.tabla, self.departamento,
-                    progress_cb=lambda p: self.progress.emit(int(p * 0.6)),
+            # DuckDB consulta el parquet remoto sin descargar el archivo.
+            if not duckdb_available():
+                raise RuntimeError(
+                    "El motor de consulta (DuckDB) aún no está disponible. "
+                    "Espera a que termine de instalarse o revisa tu conexión a "
+                    "internet, y vuelve a intentarlo."
                 )
-                remote = False
-                self.status.emit(f"Agregando datos por {unidad}…")
+            self.status.emit(
+                f"Consultando GitHub (sin descarga) por {unidad}…")
 
             self.progress.emit(65)
-            df = agregar_datos(data, self.nivel, self.variable,
-                               self.agg, self.category, remote=remote)
+            df = agregar_datos(urls, self.nivel, self.variable,
+                               self.agg, self.category,
+                               departamento=self.departamento)
 
-            # Valor nacional (un escalar)
-            self.status.emit("Calculando valor nacional…")
+            # Valor de referencia (nacional, o departamental si se filtró)
+            self.status.emit("Calculando valor de referencia…")
             self.progress.emit(85)
-            national = resumen_nacional(data, self.variable, self.agg,
-                                        self.category, remote=remote)
+            national = resumen_nacional(urls, self.variable, self.agg,
+                                        self.category,
+                                        departamento=self.departamento)
             self.progress.emit(95)
             self.finished.emit({"df": df, "national": national})
         except Exception as exc:
@@ -258,25 +255,11 @@ class CensosBOPanel(QDockWidget):
             lbl_version.setAlignment(Qt.AlignCenter)
             main.addWidget(lbl_version)
 
-        lbl_years = QLabel("Datos: 1976 · 1992 · 2001 · 2012 · 2024")
-        lbl_years.setObjectName("lbl_hint")
-        lbl_years.setAlignment(Qt.AlignCenter)
-        main.addWidget(lbl_years)
-
         self.lbl_engine = QLabel("")
         self.lbl_engine.setObjectName("lbl_hint")
         self.lbl_engine.setAlignment(Qt.AlignCenter)
         self.lbl_engine.setWordWrap(True)
         main.addWidget(self.lbl_engine)
-
-        self.btn_clear_cache = QPushButton("Limpiar caché")
-        self.btn_clear_cache.setObjectName("btn_clear_cache")
-        self.btn_clear_cache.setCursor(Qt.PointingHandCursor)
-        self.btn_clear_cache.setToolTip(
-            "Limpia los diccionarios y esquemas en memoria.\n"
-            "Útil si subiste archivos nuevos al release de GitHub."
-        )
-        main.addWidget(self.btn_clear_cache)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
@@ -416,7 +399,8 @@ class CensosBOPanel(QDockWidget):
         stats_layout.addWidget(self.stats_bars_widget)
         self.stats_bars_widget.setVisible(False)
 
-        self.lbl_stats_hint = QLabel("Pulsa '1 · Consultar' para calcular\nla agregación y ver el resumen.")
+        self.lbl_stats_hint = QLabel(
+            "Pulsa '1 · Consultar' para calcular\nla agregación y ver el resumen.")
         self.lbl_stats_hint.setObjectName("lbl_hint")
         self.lbl_stats_hint.setAlignment(Qt.AlignCenter)
         stats_layout.addWidget(self.lbl_stats_hint)
@@ -442,23 +426,20 @@ class CensosBOPanel(QDockWidget):
         self.progress_bar.setVisible(False)
         action_l.addWidget(self.progress_bar)
 
-        self.lbl_cache = QLabel("")
-        self.lbl_cache.setObjectName("lbl_hint")
-        self.lbl_cache.setAlignment(Qt.AlignCenter)
-        action_l.addWidget(self.lbl_cache)
-
         self.btn_generar = QPushButton("2 · Generar mapa")
         self.btn_generar.setObjectName("btn_generar")
         self.btn_generar.setCursor(Qt.PointingHandCursor)
         self.btn_generar.setEnabled(False)   # se habilita tras "Consultar"
-        self.btn_generar.setToolTip("Dibuja el mapa con el resultado ya consultado.")
+        self.btn_generar.setToolTip(
+            "Dibuja el mapa con el resultado ya consultado.")
         action_l.addWidget(self.btn_generar)
 
         main.addWidget(action_w)
         main.addStretch()
 
     def _apply_styles(self):
-        qss = os.path.join(os.path.dirname(os.path.dirname(__file__)), "styles", "theme.qss")
+        qss = os.path.join(os.path.dirname(
+            os.path.dirname(__file__)), "styles", "theme.qss")
         if os.path.exists(qss):
             with open(qss, encoding="utf-8") as f:
                 self.widget().setStyleSheet(f.read())
@@ -467,7 +448,7 @@ class CensosBOPanel(QDockWidget):
 
     def _show_engine_status(self):
         if duckdb_available():
-            self.lbl_engine.setText("⚡ DuckDB activo — consulta remota sin descarga")
+            self.lbl_engine.setText("⚡ DuckDB activo")
         else:
             self.lbl_engine.setText("⏳ Preparando motor de consulta…")
 
@@ -479,34 +460,41 @@ class CensosBOPanel(QDockWidget):
         self._install_worker.finished.connect(self._on_install_done)
         self._install_worker.start()
 
-    def _on_clear_cache(self):
-        clear_caches()
-        self._invalidate_result()
-        self._var_descriptions = {}
-        self.lbl_engine.setText("✓ Caché limpiado — recargando variables…")
-        # Recargar variables/descripciones desde la fuente (no solo limpiar)
-        self._update_variable_combo()
+    def showEvent(self, event):
+        """Al (re)abrir el panel, reintenta instalar el motor si aún falta y no
+        hay una instalación en curso. Da una vía de reintento sin botón extra."""
+        super().showEvent(event)
+        worker_running = bool(
+            self._install_worker and self._install_worker.isRunning())
+        if not duckdb_available() and not worker_running:
+            self._auto_install_duckdb()
 
-    def _on_install_done(self, success):
+    def _on_install_done(self, success, message=""):
         self.btn_generar.setEnabled(True)
         if success:
-            self.lbl_engine.setText("⚡ DuckDB activo — consulta remota sin descarga")
+            self.lbl_engine.setText(
+                "⚡ DuckDB activo — consulta remota sin descarga")
             self._update_variable_combo()
         else:
-            self.lbl_engine.setText("⚠ Modo descarga local activo (DuckDB no disponible)")
+            self.lbl_engine.setText(
+                "⚠ " + (message or "No se pudo instalar el motor (DuckDB).")
+                + " Reabre el panel para reintentar."
+            )
 
     # ─────────────────────────── Signals ─────────────────────────────────────
 
     def _connect_signals(self):
-        self.btn_clear_cache.clicked.connect(self._on_clear_cache)
         self.combo_anio.currentIndexChanged.connect(self._update_tabla_combo)
-        self.combo_anio.currentIndexChanged.connect(self._update_nivel_availability)
+        self.combo_anio.currentIndexChanged.connect(
+            self._update_nivel_availability)
         self.combo_tabla.currentIndexChanged.connect(self._on_tabla_changed)
         self.combo_nivel.currentIndexChanged.connect(self._on_nivel_changed)
-        self.combo_variable.currentIndexChanged.connect(self._on_variable_changed)
+        self.combo_variable.currentIndexChanged.connect(
+            self._on_variable_changed)
         self.combo_agg.currentIndexChanged.connect(self._on_agg_changed)
         self.combo_depto.currentIndexChanged.connect(self._invalidate_result)
-        self.combo_categoria.currentIndexChanged.connect(self._invalidate_result)
+        self.combo_categoria.currentIndexChanged.connect(
+            self._invalidate_result)
         self.txt_sql.textChanged.connect(self._invalidate_result)
         self.chk_avanzado.toggled.connect(self._on_avanzado_toggled)
         self.btn_consultar.clicked.connect(self._on_consultar_clicked)
@@ -523,10 +511,8 @@ class CensosBOPanel(QDockWidget):
         self.combo_tabla.blockSignals(False)
         self._on_tabla_changed()
 
-
     def _on_tabla_changed(self):
         self._update_variable_combo()
-        self._update_cache_label()
         self._invalidate_result()
 
     def _on_nivel_changed(self):
@@ -545,8 +531,10 @@ class CensosBOPanel(QDockWidget):
         if anio == 1976:
             item.setEnabled(False)
             if self.combo_nivel.currentText() == "Municipal":
-                self.combo_nivel.setCurrentIndex(self.combo_nivel.findText("Departamental"))
-            self.combo_nivel.setToolTip("El censo 1976 solo está disponible a nivel departamental.")
+                self.combo_nivel.setCurrentIndex(
+                    self.combo_nivel.findText("Departamental"))
+            self.combo_nivel.setToolTip(
+                "El censo 1976 solo está disponible a nivel departamental.")
         else:
             item.setEnabled(True)
             self.combo_nivel.setToolTip("")
@@ -580,7 +568,8 @@ class CensosBOPanel(QDockWidget):
         """Clave de los parámetros que afectan la agregación (no el estilo del mapa)."""
         anio = int(self.combo_anio.currentText())
         tabla = self.combo_tabla.currentData()
-        nivel = "departamento" if self.combo_nivel.currentText() == "Departamental" else "municipio"
+        nivel = "departamento" if self.combo_nivel.currentText(
+        ) == "Departamental" else "municipio"
         depto = self.combo_depto.currentData() if nivel == "municipio" else None
         if self.chk_avanzado.isChecked():
             return (anio, tabla, nivel, depto, "__sql__", self.txt_sql.toPlainText().strip())
@@ -596,7 +585,8 @@ class CensosBOPanel(QDockWidget):
         if not tabla:
             self.iface.messageBar().pushWarning("Q-CensosBo", "Selecciona una tabla.")
             return
-        nivel = "departamento" if self.combo_nivel.currentText() == "Departamental" else "municipio"
+        nivel = "departamento" if self.combo_nivel.currentText(
+        ) == "Departamental" else "municipio"
         depto = self.combo_depto.currentData() if nivel == "municipio" else None
 
         variable = self.combo_variable.currentData() or "__count__"
@@ -635,13 +625,15 @@ class CensosBOPanel(QDockWidget):
                                      depto, sql_expr=sql_expr)
         self._map_worker.progress.connect(self.progress_bar.setValue)
         self._map_worker.status.connect(self.lbl_progress.setText)
-        self._map_worker.finished.connect(lambda df: self._on_aggregation_ready(df, ctx))
+        self._map_worker.finished.connect(
+            lambda df: self._on_aggregation_ready(df, ctx))
         self._map_worker.error.connect(self._on_consulta_error)
         self._map_worker.start()
 
     def _set_consulta_busy(self, active):
         self.btn_consultar.setEnabled(not active)
-        self.btn_consultar.setText("Consultando…" if active else "1 · Consultar")
+        self.btn_consultar.setText(
+            "Consultando…" if active else "1 · Consultar")
         self.progress_bar.setVisible(active)
         self.lbl_progress.setVisible(active)
         if active:
@@ -659,7 +651,6 @@ class CensosBOPanel(QDockWidget):
         self._agg_result = (ctx["key"], df, ctx)
         self._show_result_summary(result, ctx)
         self.btn_generar.setEnabled(True)
-        self._update_cache_label()
 
     def _on_consulta_error(self, msg):
         self._set_consulta_busy(False)
@@ -674,6 +665,7 @@ class CensosBOPanel(QDockWidget):
         anio = int(self.combo_anio.currentText())
         tabla = self.combo_tabla.currentData() or ""
         labels = get_value_labels(anio, variable, tabla)
+
         def sort_key(code):
             c = normalize_code(code)
             return (0, int(c)) if c.lstrip("-").isdigit() else (1, str(code))
@@ -692,7 +684,8 @@ class CensosBOPanel(QDockWidget):
         for w in (self.combo_variable, self.combo_agg):
             w.setVisible(not checked)
         # Clasificación: solo si no es modo avanzado Y la variable es numérica
-        clas_visible = (not checked) and (self._current_var_type != "categorical")
+        clas_visible = (not checked) and (
+            self._current_var_type != "categorical")
         self.combo_clasificacion.setVisible(clas_visible)
         self._lbl_clasificacion.setVisible(clas_visible)
         # Categoría: solo si no es modo avanzado Y agg == pct_category
@@ -742,7 +735,8 @@ class CensosBOPanel(QDockWidget):
             self._current_var_type = None
             self._refresh_categoria_visibility()
 
-        self._show_stats_hint("Pulsa '1 · Consultar' para calcular\nla agregación y ver el resumen.")
+        self._show_stats_hint(
+            "Pulsa '1 · Consultar' para calcular\nla agregación y ver el resumen.")
 
     def _update_agg_for_type(self, var_type):
         """Filtra el combo de agregación y muestra/oculta clasificación según tipo."""
@@ -759,7 +753,8 @@ class CensosBOPanel(QDockWidget):
                 ("Porcentaje", "pct_category"),
                 ("Moda",       "mode"),
             ]
-        else:  # numeric — solo resúmenes del valor (Conteo cuenta población, no el valor)
+        # numeric — solo resúmenes del valor (Conteo cuenta población, no el valor)
+        else:
             options = [
                 ("Media",               "mean"),
                 ("Mediana",             "median"),
@@ -793,10 +788,7 @@ class CensosBOPanel(QDockWidget):
         self.combo_variable.addItem("(Cargando variables…)", "__loading__")
         self.combo_variable.blockSignals(False)
 
-        cached = get_cached_paths(anio, tabla)
-        if cached:
-            self._start_cols_worker(cached[0], remote=False)
-        elif duckdb_available():
+        if duckdb_available():
             self._start_cols_worker(get_first_url(anio, tabla), remote=True)
 
     def _start_cols_worker(self, path_or_url, remote):
@@ -808,7 +800,8 @@ class CensosBOPanel(QDockWidget):
         tabla = self.combo_tabla.currentData() or ""
         w = ColumnsWorker(path_or_url, anio=anio, tabla=tabla, remote=remote)
         w.finished.connect(
-            lambda cols, descs, types: self._on_columns_loaded(cols, descs, types, anio, tabla)
+            lambda cols, descs, types: self._on_columns_loaded(
+                cols, descs, types, anio, tabla)
         )
         self._cols_worker = w
         w.start()
@@ -862,33 +855,39 @@ class CensosBOPanel(QDockWidget):
         """Resumen compacto del RESULTADO: qué se mapea, valor nacional y la
         distribución por unidad (la barra ya comunica el rango/spread)."""
         import pandas as pd
-        df       = result.get("df") if isinstance(result, dict) else result
+        df = result.get("df") if isinstance(result, dict) else result
         national = result.get("national") if isinstance(result, dict) else None
 
         self._clear_stat_bars()
         self.lbl_stats_hint.setVisible(False)
         self.stats_bars_widget.setVisible(True)
 
-        nivel = ctx["nivel"]; agg = ctx["agg"]; sql_expr = ctx["sql_expr"]
+        nivel = ctx["nivel"]
+        agg = ctx["agg"]
+        sql_expr = ctx["sql_expr"]
         unidad_sg = "departamento" if nivel == "departamento" else "municipio"
         unidad_pl = "departamentos" if nivel == "departamento" else "municipios"
         self.lbl_total_caption.setText(f"Unidades ({unidad_pl}):")
         self.lbl_total.setText(str(len(df)))
 
-        # Qué se está mapeando + valor nacional (las dos líneas clave)
+        # Qué se está mapeando + valor de referencia (las dos líneas clave).
+        # Si se filtró por un departamento, la referencia es departamental.
         self._add_note(self._indicator_title(ctx))
         natlbl = self._national_label(ctx, national)
         if natlbl is not None:
-            self._add_kv_row("Nacional", natlbl)
+            ref_caption = "Departamental" if ctx.get("depto") else "Nacional"
+            self._add_kv_row(ref_caption, natlbl)
 
         pct = (agg == "pct_category")
+
         def fmt(x):
             return f"{x:.1f}%" if pct else f"{x:,.2f}".rstrip("0").rstrip(".")
 
         if agg == "mode" and not sql_expr:
             # Categórico: cuántas unidades tiene cada categoría modal
             self._add_section(f"Categoría modal por {unidad_sg}")
-            labels = get_value_labels(ctx["anio"], ctx["variable"], ctx["tabla"])
+            labels = get_value_labels(
+                ctx["anio"], ctx["variable"], ctx["tabla"])
             norm = {normalize_code(k): v for k, v in labels.items()}
             counts = df["valor"].astype(str).value_counts()
             total = len(df) or 1
@@ -899,10 +898,14 @@ class CensosBOPanel(QDockWidget):
         else:
             vals = pd.to_numeric(df["valor"], errors="coerce").dropna()
             if len(vals) == 0:
-                self._show_stats_hint("El resultado no tiene valores numéricos.")
+                self._show_stats_hint(
+                    "El resultado no tiene valores numéricos.")
                 return
-            # Histograma (muchas unidades) o ranking (pocas) — sin tabla de stats
-            if len(vals) > 20:
+            # Ranking legible por nombre cuando las unidades caben (cualquier
+            # departamento, o los municipios de uno: ≤ ~120). Histograma solo
+            # cuando son demasiadas para listar (p. ej. todos los municipios
+            # del país, 339).
+            if len(vals) > 120:
                 import numpy as np
                 self._add_section(f"Distribución de los {unidad_pl}")
                 method = self.combo_clasificacion.currentData() or "quantile"
@@ -911,12 +914,15 @@ class CensosBOPanel(QDockWidget):
                 mxc = int(hist.max()) or 1
                 for i, c in enumerate(hist):
                     rng = f"{fmt(edges[i])} – {fmt(edges[i + 1])}"
-                    self._add_stat_bar(rng, int(c / mxc * 100), text=str(int(c)))
+                    self._add_stat_bar(
+                        rng, int(c / mxc * 100), text=str(int(c)))
             else:
                 self._add_section(f"Por {unidad_sg} (mayor → menor)")
-                vmin = float(vals.min()); rng = (float(vals.max()) - vmin) or 1
-                tmp = df.assign(_v=pd.to_numeric(df["valor"], errors="coerce")).dropna(subset=["_v"])
-                shown = tmp.sort_values("_v", ascending=False).head(12)
+                vmin = float(vals.min())
+                rng = (float(vals.max()) - vmin) or 1
+                tmp = df.assign(_v=pd.to_numeric(
+                    df["valor"], errors="coerce")).dropna(subset=["_v"])
+                shown = tmp.sort_values("_v", ascending=False).head(15)
                 for _, r in shown.iterrows():
                     name = str(r.get("geo_nombre", r["geo_code"]))
                     fill = min(100, int((r["_v"] - vmin) / rng * 96) + 4)
@@ -931,7 +937,8 @@ class CensosBOPanel(QDockWidget):
         unidad = "departamento" if nivel == "departamento" else "municipio"
         if ctx["sql_expr"]:
             return f"Expresión SQL — por {unidad}"
-        var = ctx["variable"]; agg = ctx["agg"]
+        var = ctx["variable"]
+        agg = ctx["agg"]
         templ = {
             "mean":   f"Media de {var}",
             "median": f"Mediana de {var}",
@@ -957,9 +964,11 @@ class CensosBOPanel(QDockWidget):
             if agg == "__count__":
                 return f"{int(national):,}".replace(",", ".")
             if agg == "mode":
-                labels = get_value_labels(ctx["anio"], ctx["variable"], ctx["tabla"])
+                labels = get_value_labels(
+                    ctx["anio"], ctx["variable"], ctx["tabla"])
                 norm = {normalize_code(k): v for k, v in labels.items()}
-                code = str(national); lbl = norm.get(normalize_code(code))
+                code = str(national)
+                lbl = norm.get(normalize_code(code))
                 return f"{code} — {lbl}" if lbl else code
             return f"{float(national):,.2f}".rstrip("0").rstrip(".")
         except Exception:
@@ -1022,18 +1031,6 @@ class CensosBOPanel(QDockWidget):
         row_l.addWidget(bar)
         self.stats_bars_layout.addWidget(row_w)
 
-    # ─────────────────────────── Cache label ─────────────────────────────────
-
-    def _update_cache_label(self):
-        anio = int(self.combo_anio.currentText())
-        tabla = self.combo_tabla.currentData() or ""
-        if duckdb_available():
-            self.lbl_cache.setText("El mapa se calcula en el servidor (⚡ sin descargar todo)")
-        elif is_cached(anio, tabla):
-            self.lbl_cache.setText("El mapa se calcula con los datos locales (✓ en caché)")
-        else:
-            self.lbl_cache.setText("El mapa descargará los datos primero")
-
     # ─────────────────────────── Generar mapa ────────────────────────────────
 
     def _on_generar_clicked(self):
@@ -1050,8 +1047,12 @@ class CensosBOPanel(QDockWidget):
 
     def _build_layer(self, df, ctx, clasificacion):
         from ..core.layer_builder import crear_capa
-        agg = ctx["agg"]; variable = ctx["variable"]; nivel = ctx["nivel"]
-        anio = ctx["anio"]; tabla = ctx["tabla"]; departamento = ctx["depto"]
+        agg = ctx["agg"]
+        variable = ctx["variable"]
+        nivel = ctx["nivel"]
+        anio = ctx["anio"]
+        tabla = ctx["tabla"]
+        departamento = ctx["depto"]
         sql_expr = ctx["sql_expr"]
         try:
             # Solo el mapa de Moda es categórico (colores por categoría). El

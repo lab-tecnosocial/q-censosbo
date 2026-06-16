@@ -1,13 +1,15 @@
 """
 Motor de consulta para archivos parquet del censosbo.
 
-Estrategia de velocidad:
-  1. DuckDB remoto: consulta directamente sobre HTTPS sin descargar el archivo.
-     Parquet almacena estadísticas en el footer; DuckDB hace HTTP range requests
-     y lee solo las columnas/rowgroups necesarios. Un COUNT(*) por depto puede
-     transferir <2 MB en vez de 500 MB.
-  2. Pyarrow local con proyección de columnas: fallback si DuckDB no está listo.
-     Lee solo las columnas necesarias (~50x más rápido que leer el archivo completo).
+DuckDB es el ÚNICO motor, y lee parquet local o remoto con la misma API
+(`read_parquet(...)`): solo cambia la fuente. No se usa pyarrow.
+
+  - Remoto (URL https): consulta directa sin descargar el archivo. Parquet guarda
+    estadísticas en el footer; DuckDB hace HTTP range requests y lee solo las
+    columnas/rowgroups necesarios. Un COUNT(*) por depto transfiere <2 MB en vez
+    de cientos de MB.
+  - Local (ruta cacheada): mismo SQL, sin red ni extensión httpfs. DuckDB hace
+    projection pushdown y agrega en C++ (mucho más rápido que cargar a pandas).
 
 DuckDB se instala automáticamente en la primera apertura del panel (no requiere
 acción del usuario más allá de instalar el plugin).
@@ -16,12 +18,9 @@ acción del usuario más allá de instalar el plugin).
 import os
 import subprocess
 import sys
-import threading
-from pathlib import Path
 
 from .data_loader import (
     BASE_URL, RELEASES, TABLE_FILES, DEPT_CODES,
-    cache_dir, _year_cache_dir, _download_file,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,46 +87,119 @@ def duckdb_available():
     return _try_duckdb() is not None
 
 
+def _python_executable():
+    """Ruta al intérprete Python real de QGIS.
+
+    En Windows `sys.executable` suele apuntar a `qgis-bin.exe`, no a un python
+    invocable con `-m pip`. Buscamos el `python` real junto a `sys.prefix` /
+    al ejecutable; si no se encuentra, caemos a `sys.executable`.
+    """
+    exe = sys.executable or ""
+    if os.path.basename(exe).lower().startswith("python"):
+        return exe
+
+    exe_dir = os.path.dirname(exe)
+    if os.name == "nt":
+        names, subdirs = ("python.exe", "python3.exe"), ("", "Scripts")
+    else:
+        names, subdirs = ("python3", "python"), ("bin",)
+
+    cand_dirs = [sys.prefix, sys.exec_prefix, exe_dir]
+    for base in cand_dirs:
+        for sub in subdirs:
+            for name in names:
+                c = os.path.join(base, sub, name) if sub else os.path.join(base, name)
+                if os.path.isfile(c):
+                    return c
+    return exe
+
+
+def _run_pip(python, extra_args, timeout=180):
+    """Ejecuta `python -m pip install ...` sin abrir consola en Windows.
+
+    Retorna (returncode, salida_combinada)."""
+    flags = 0
+    if os.name == "nt":
+        flags = 0x08000000  # CREATE_NO_WINDOW: evita el parpadeo de una consola
+    proc = subprocess.run(
+        [python, "-m", "pip", "install", "duckdb",
+         "--disable-pip-version-check", *extra_args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=timeout,
+        creationflags=flags,
+        text=True,
+    )
+    return proc.returncode, (proc.stdout or "").strip()
+
+
+def _reimport_duckdb():
+    """Fuerza re-importación de duckdb (incluye user-site por si se usó --user)."""
+    global _duckdb, _duckdb_checked
+    try:
+        import site
+        site.addsitedir(site.getusersitepackages())
+    except Exception:
+        pass
+    _duckdb_checked = False
+    _duckdb = None
+    return _try_duckdb() is not None
+
+
 def install_duckdb(status_cb=None, done_cb=None):
     """
-    Instala duckdb en el Python de QGIS de forma silenciosa.
-    Llamar en un QThread para no bloquear la UI.
+    Instala duckdb en el Python de QGIS. Llamar en un QThread (no bloquea la UI).
 
-    status_cb(str): callback con texto de estado
-    done_cb(bool):  callback al terminar — True si instaló correctamente
+    Estrategia robusta para Windows/instalaciones sin permisos:
+      1. Localiza el python real de QGIS (no `qgis-bin.exe`).
+      2. Intenta `pip install` normal.
+      3. Si falla (p. ej. QGIS en Program Files sin admin), reintenta con
+         `--user` (instala en el perfil del usuario, sin permisos elevados).
+
+    status_cb(str):        callback con texto de estado
+    done_cb(bool, str):    callback al terminar — (éxito, mensaje accionable)
     """
-    global _duckdb, _duckdb_checked
-
     # Ya está instalado
     if _try_duckdb():
         if done_cb:
-            done_cb(True)
+            done_cb(True, "DuckDB ya estaba disponible.")
         return
 
     if status_cb:
         status_cb("Instalando DuckDB (solo la primera vez)…")
 
-    try:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "duckdb", "-q",
-             "--disable-pip-version-check"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=120,
-        )
-        # Forzar re-importación
-        _duckdb_checked = False
-        _duckdb = None
-        _try_duckdb()
-        success = _duckdb is not None
-    except Exception:
-        success = False
+    python = _python_executable()
+    attempts = [
+        ([], "Instalando DuckDB (solo la primera vez)…"),
+        (["--user"], "Reintentando en tu perfil de usuario…"),
+    ]
 
+    last_output = ""
+    for extra, msg in attempts:
+        if status_cb:
+            status_cb(msg)
+        try:
+            code, out = _run_pip(python, extra)
+            last_output = out
+            if code == 0 and _reimport_duckdb():
+                if status_cb:
+                    status_cb("DuckDB instalado correctamente.")
+                if done_cb:
+                    done_cb(True, "DuckDB instalado correctamente.")
+                return
+        except subprocess.TimeoutExpired:
+            last_output = "La instalación superó el tiempo de espera."
+        except Exception as exc:
+            last_output = str(exc)
+
+    # Fallo en ambos intentos: mensaje accionable (última línea útil de pip)
+    detalle = last_output.splitlines()[-1] if last_output else ""
+    mensaje = ("No se pudo instalar DuckDB. Revisa tu conexión a internet "
+               "y los permisos." + (f" Detalle: {detalle}" if detalle else ""))
     if status_cb:
-        status_cb("DuckDB instalado correctamente." if success else
-                  "No se pudo instalar DuckDB (modo descarga local activo).")
+        status_cb(mensaje)
     if done_cb:
-        done_cb(success)
+        done_cb(False, mensaje)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,25 +227,19 @@ def get_first_url(anio, tabla):
 # Schema (lista de columnas)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_columns_from_path(path):
-    """Lee el schema de un parquet local (solo el footer, instantáneo)."""
-    import pyarrow.parquet as pq
-    return pq.read_schema(path).names
-
-
-def get_columns_remote(url):
+def get_columns(source):
     """
-    Lee el schema de un parquet remoto con DuckDB (solo footer, ~1-3 seg).
+    Lee el schema de un parquet (local o remoto) con DuckDB — solo el footer.
     Retorna lista de nombres de columnas o [] si falla.
     """
-    duckdb = _try_duckdb()
-    if not duckdb:
+    if not duckdb_available():
         return []
     con = None
     try:
-        con = duckdb.connect()
-        con.execute("INSTALL httpfs; LOAD httpfs;")
-        result = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{url}') LIMIT 0").fetchall()
+        con = _make_con([source])
+        result = con.execute(
+            "DESCRIBE SELECT * FROM read_parquet(?) LIMIT 0", [source]
+        ).fetchall()
         return [row[0] for row in result]
     except Exception:
         return []
@@ -193,12 +259,27 @@ def _pad_width(nivel):
     return 2 if nivel == "departamento" else 6
 
 
-def _make_con():
+def _is_remote(srcs):
+    """True si alguna fuente es una URL remota (http/https)."""
+    return any(str(s).startswith("http") for s in srcs)
+
+
+def _make_con(srcs=None):
+    """Conexión DuckDB.
+
+    Carga la extensión httpfs solo si hay fuentes remotas; para parquet locales
+    no se necesita red ni httpfs (así una consulta sobre datos cacheados funciona
+    sin internet aunque httpfs nunca se haya instalado).
+    """
     duckdb = _try_duckdb()
     if not duckdb:
         raise RuntimeError("DuckDB no disponible.")
     con = duckdb.connect()
-    con.execute("INSTALL httpfs; LOAD httpfs;")
+    if srcs is None or _is_remote(srcs):
+        try:
+            con.execute("INSTALL httpfs; LOAD httpfs;")
+        except Exception:
+            pass
     return con
 
 
@@ -217,9 +298,31 @@ def _close(con):
             pass
 
 
-def _from_clause(urls):
-    urls_sql = ", ".join(f"'{u}'" for u in urls)
-    return f"read_parquet([{urls_sql}])"
+def _filtered_from(urls, idep=None, departamento=None):
+    """Fragmento FROM parametrizado, opcionalmente filtrado por departamento.
+
+    DuckDB acepta la lista de rutas/URLs como un único parámetro de
+    `read_parquet(?)`, así NO interpolamos rutas en el texto SQL: el driver las
+    trata como valor enlazado. Esto evita escapes manuales y los problemas con
+    los backslashes de Windows en cualquier plataforma.
+
+    Si se pide un `departamento` y el archivo tiene columna `idep` (no está ya
+    particionado por depto), envuelve la fuente en una subconsulta que filtra por
+    ese departamento. Así, a nivel municipal, la agregación y el valor de
+    referencia se restringen al departamento elegido en vez de a todo el país.
+
+    Retorna (fragmento_sql, params) para pasar a `con.execute(sql, params)`.
+    """
+    if departamento and idep:
+        try:
+            dep_int = int(str(departamento))
+        except (ValueError, TypeError):
+            dep_int = None
+        if dep_int is not None:
+            return (f"(SELECT * FROM read_parquet(?) "
+                    f"WHERE TRY_CAST({idep} AS INTEGER) = ?) AS _src",
+                    [list(urls), dep_int])
+    return "read_parquet(?)", [list(urls)]
 
 
 def _is_dept_partitioned(urls):
@@ -245,7 +348,7 @@ def _describe_cols(con, url):
     cols = {}
     try:
         rows = con.execute(
-            f"DESCRIBE SELECT * FROM read_parquet('{url}') LIMIT 0"
+            "DESCRIBE SELECT * FROM read_parquet(?) LIMIT 0", [url]
         ).fetchall()
         cols = {r[0].lower(): r[0] for r in rows}
     except Exception:
@@ -268,9 +371,10 @@ def _detect_geo_col(con, url, nivel):
     return _pick_col(cols, _GEO_CANDIDATES.get(nivel, [])) or _geo_col(nivel)
 
 
-def _build_geo_parts(con, urls, nivel):
+def _build_geo_parts(con, urls, nivel, departamento=None):
     """
-    Retorna (src_clause, geo_select_sql, group_col).
+    Retorna (src_clause, geo_select_sql, group_col, params). `src_clause` lleva
+    placeholder(s) `?` y `params` los valores correspondientes (ver _filtered_from).
 
     Camino preferido (todos los censos ya traen geografía en la tabla): construye
     el código a partir de las columnas reales — departamento = idep(2);
@@ -278,23 +382,28 @@ def _build_geo_parts(con, urls, nivel):
 
     Fallback: archivos 2024 particionados que aún no tengan columna idep → extrae
     el departamento del nombre de archivo virtual de DuckDB.
+
+    Si se pide `departamento` (solo aplica a nivel municipal), la fuente se filtra
+    a ese departamento vía _filtered_from.
     """
-    src = _from_clause(urls)
     cols = _describe_cols(con, urls[0])
     idep = _pick_col(cols, _GEO_CANDIDATES["departamento"])
 
-    # Fallback para archivos particionados sin columna idep
+    # Fallback para archivos particionados sin columna idep (ya vienen filtrados
+    # por departamento desde get_parquet_urls, así que no re-filtramos aquí).
     if not idep and _is_dept_partitioned(urls):
-        urls_sql = ", ".join(f"'{u}'" for u in urls)
-        src = f"read_parquet([{urls_sql}], filename=true)"
+        src = "read_parquet(?, filename=true)"
+        params = [list(urls)]
         dep = "LPAD(regexp_extract(filename, 'persona_dep(\\d+)', 1), 2, '0')"
         if nivel == "departamento":
-            return src, f"{dep} AS geo_code", "geo_code"
+            return src, f"{dep} AS geo_code", "geo_code", params
         iprov = _pick_col(cols, _GEO_CANDIDATES["provincia"]) or "iprov"
         imun  = _pick_col(cols, _GEO_CANDIDATES["municipio"]) or "imun"
         geo_select = (f"CONCAT({dep}, LPAD(CAST({iprov} AS VARCHAR), 2, '0'), "
                       f"LPAD(CAST({imun} AS VARCHAR), 2, '0')) AS geo_code")
-        return src, geo_select, "geo_code"
+        return src, geo_select, "geo_code", params
+
+    src, params = _filtered_from(urls, idep, departamento)
 
     if nivel == "departamento":
         geo = idep or _geo_col("departamento")
@@ -310,7 +419,7 @@ def _build_geo_parts(con, urls, nivel):
             geo_select = f"CAST({imun} AS VARCHAR) AS geo_code"
         else:
             raise ValueError(NO_MUNICIPIO_MSG)
-    return src, geo_select, "geo_code"
+    return src, geo_select, "geo_code", params
 
 
 def _cat_filter_sql(var_expr, category):
@@ -327,16 +436,19 @@ def _cat_filter_sql(var_expr, category):
     return f"CAST({var_expr} AS VARCHAR) = '{cat.replace(chr(39), chr(39) * 2)}'"
 
 
-def aggregate_remote(urls, nivel, variable="__count__", agg="__count__", category=None):
+def aggregate_geo(urls, nivel, variable="__count__", agg="__count__",
+                  category=None, departamento=None):
     """
-    Agrega datos sobre parquet remoto con DuckDB.
+    Agrega datos por unidad geográfica con DuckDB. `urls` pueden ser URLs
+    remotas o rutas locales: read_parquet acepta ambas indistintamente.
 
     Maneja tanto archivos históricos (con columna idep/imun) como archivos
     particionados del 2024 (sin columna idep, geo extraído del nombre de archivo).
-    Retorna DataFrame [geo_code, valor].
+    Si se pasa `departamento` (nivel municipal), restringe la agregación a ese
+    departamento. Retorna DataFrame [geo_code, valor].
     """
-    con = _make_con()
-    src, geo_select, group = _build_geo_parts(con, urls, nivel)
+    con = _make_con(urls)
+    src, geo_select, group, params = _build_geo_parts(con, urls, nivel, departamento)
 
     if agg == "__count__":
         if category is not None:
@@ -395,7 +507,7 @@ def aggregate_remote(urls, nivel, variable="__count__", agg="__count__", categor
         """
 
     try:
-        df = con.execute(sql).df()
+        df = con.execute(sql, params).df()
     finally:
         _close(con)
     df["geo_code"] = df["geo_code"].astype(str).str.zfill(_pad_width(nivel))
@@ -425,14 +537,20 @@ def _national_value_sql(variable, agg, category):
     return "COUNT(*)"
 
 
-def aggregate_national_remote(urls, variable="__count__", agg="__count__", category=None):
-    """Valor nacional (un solo escalar, sin desagregar por geografía) vía DuckDB."""
-    con = _make_con()
-    src = _from_clause(urls)
+def aggregate_national(urls, variable="__count__", agg="__count__",
+                       category=None, departamento=None):
+    """Valor de referencia (un escalar, sin desagregar por geografía) vía DuckDB.
+
+    `urls` pueden ser URLs remotas o rutas locales. Si se pasa `departamento`,
+    el escalar se calcula solo sobre ese departamento (referencia departamental
+    en vez de nacional)."""
+    con = _make_con(urls)
+    idep = _pick_col(_describe_cols(con, urls[0]), _GEO_CANDIDATES["departamento"])
+    src, params = _filtered_from(urls, idep, departamento)
     expr = _national_value_sql(variable, agg, category)
     where = "" if agg in ("__count__", "pct_category") else f" WHERE {variable} IS NOT NULL"
     try:
-        row = con.execute(f"SELECT {expr} AS v FROM {src}{where}").fetchone()
+        row = con.execute(f"SELECT {expr} AS v FROM {src}{where}", params).fetchone()
         return row[0] if row else None
     except Exception:
         return None
@@ -440,146 +558,25 @@ def aggregate_national_remote(urls, variable="__count__", agg="__count__", categ
         _close(con)
 
 
-def _read_col_local(paths, variable):
-    import pyarrow.parquet as pq
-    import pandas as pd
-    parts = [pq.read_table(p, columns=[variable]).to_pandas()[variable] for p in paths]
-    return pd.concat(parts, ignore_index=True) if parts else pd.Series(dtype="object")
+def read_parquet_local_df(path, columns=None):
+    """Lee un parquet LOCAL a un DataFrame pandas con DuckDB (sin red/httpfs).
 
-
-def aggregate_national_local(paths, variable="__count__", agg="__count__", category=None):
-    """Valor nacional (un escalar) desde parquet locales."""
-    import pyarrow.parquet as pq
-    import pandas as pd
+    Usado para los diccionarios (archivos pequeños). `columns` opcional limita
+    la proyección. Retorna None si DuckDB no está disponible o falla la lectura.
+    """
+    if not duckdb_available():
+        return None
+    con = None
     try:
-        if agg == "__count__" and category is None:
-            return int(sum(pq.read_metadata(p).num_rows for p in paths))
-        s = _read_col_local(paths, variable)
-        if agg == "__count__":
-            cn = normalize_code(category)
-            return int((s.astype(str).map(normalize_code) == cn).sum())
-        if agg == "pct_category" and category is not None:
-            cn = normalize_code(category)
-            m = (s.astype(str).map(normalize_code) == cn).sum()
-            return round(100.0 * m / len(s), 2) if len(s) else 0.0
-        if agg == "mode":
-            md = s.dropna().mode()
-            return md.iloc[0] if len(md) else None
-        num = pd.to_numeric(s, errors="coerce").dropna()
-        if agg == "mean":
-            return round(float(num.mean()), 4) if len(num) else None
-        if agg == "sum":
-            return float(num.sum())
-        if agg == "median":
-            return round(float(num.median()), 4) if len(num) else None
-        if agg == "std":
-            return round(float(num.std()), 4) if len(num) else None
-        return int(len(s))
+        con = _make_con([path])
+        cols = ", ".join(columns) if columns else "*"
+        return con.execute(
+            f"SELECT {cols} FROM read_parquet(?)", [path]
+        ).df()
     except Exception:
         return None
-
-
-def _local_geo_cols(paths, nivel):
-    """
-    Detecta las columnas geográficas reales del primer parquet local y retorna
-    (idep, iprov, imun, partitioned). `partitioned` es True solo si no hay idep
-    y los archivos son los particionados de 2024 (fallback por nombre de archivo).
-    """
-    import pyarrow.parquet as pq
-    low = {c.lower(): c for c in pq.read_schema(paths[0]).names}
-    def pick(cands):
-        for c in cands:
-            if c in low:
-                return low[c]
-        return None
-    idep  = pick(_GEO_CANDIDATES["departamento"])
-    iprov = pick(_GEO_CANDIDATES["provincia"])
-    imun  = pick(_GEO_CANDIDATES["municipio"])
-    partitioned = (not idep) and all(Path(p).name.startswith("persona_dep") for p in paths)
-    return idep, iprov, imun, partitioned
-
-
-def aggregate_local(paths, nivel, variable="__count__", agg="__count__", category=None):
-    """
-    Agrega datos desde parquet locales con proyección de columnas.
-
-    Construye geo_code desde las columnas reales (departamento = idep;
-    municipio = idep+iprov+imun). Fallback: archivos 2024 particionados sin
-    columna idep → departamento del nombre de archivo.
-    """
-    import pyarrow.parquet as pq
-    import pandas as pd
-
-    idep, iprov, imun, partitioned = _local_geo_cols(paths, nivel)
-
-    if nivel == "departamento":
-        geo_cols = [idep] if idep else []
-    else:
-        if not imun and not partitioned:
-            raise ValueError(NO_MUNICIPIO_MSG)
-        geo_cols = [c for c in (idep, iprov, imun) if c]
-
-    needs_var = (variable not in (None, "__count__")) and (agg != "__count__" or category is not None)
-    read_cols = list(dict.fromkeys(geo_cols + ([variable] if needs_var else [])))
-
-    parts = []
-    for p in paths:
-        if read_cols:
-            df = pq.read_table(p, columns=read_cols).to_pandas()
-        else:
-            # Solo conteo total por depto particionado: no hace falta leer columnas
-            df = pd.DataFrame(index=range(pq.read_metadata(p).num_rows))
-
-        if partitioned:
-            dep = Path(p).stem.replace("persona_dep", "").zfill(2)
-            if nivel == "departamento":
-                df["geo_code"] = dep
-            else:
-                df["geo_code"] = (dep
-                    + (df[iprov].astype(str).str.zfill(2) if iprov else "00")
-                    + (df[imun].astype(str).str.zfill(2) if imun else "00"))
-        elif nivel == "departamento":
-            df["geo_code"] = df[idep].astype(str).str.zfill(2) if idep else ""
-        else:
-            df["geo_code"] = (df[idep].astype(str).str.zfill(2)
-                              + df[iprov].astype(str).str.zfill(2)
-                              + df[imun].astype(str).str.zfill(2))
-        parts.append(df)
-
-    combined = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=["geo_code"])
-    gc = "geo_code"
-
-    # Comparación de categoría robusta a ceros a la izquierda ("001" == "1")
-    catn = normalize_code(category) if category is not None else None
-    def eq_cat(s):
-        return s.astype(str).map(normalize_code) == catn
-
-    if agg == "__count__":
-        if category is not None:
-            combined = combined[eq_cat(combined[variable])]
-        return combined.groupby(gc).size().reset_index(name="valor")
-
-    num = lambda s: pd.to_numeric(s, errors="coerce")
-    if agg == "mean":
-        result = combined.groupby(gc)[variable].apply(lambda s: num(s).mean())
-    elif agg == "sum":
-        result = combined.groupby(gc)[variable].apply(lambda s: num(s).sum())
-    elif agg == "median":
-        result = combined.groupby(gc)[variable].apply(lambda s: num(s).median())
-    elif agg == "std":
-        result = combined.groupby(gc)[variable].apply(lambda s: num(s).std())
-    elif agg == "mode":
-        result = combined.groupby(gc)[variable].apply(
-            lambda s: s.mode().iloc[0] if len(s.mode()) > 0 else None)
-    elif agg == "pct_category" and category is not None:
-        result = combined.groupby(gc)[variable].apply(
-            lambda s: round(100.0 * eq_cat(s).sum() / len(s), 2) if len(s) else 0.0)
-    else:
-        return combined.groupby(gc).size().reset_index(name="valor")
-
-    result = result.reset_index(name="valor")
-    result["geo_code"] = result["geo_code"].astype(str)
-    return result
+    finally:
+        _close(con)
 
 
 def normalize_code(s):
@@ -598,7 +595,7 @@ def normalize_code(s):
 # Custom SQL expression
 # ─────────────────────────────────────────────────────────────────────────────
 
-def aggregate_custom_sql(urls, nivel, sql_expr):
+def aggregate_custom_sql(urls, nivel, sql_expr, departamento=None):
     """
     Agrega datos con una expresión SQL libre del usuario.
 
@@ -607,10 +604,11 @@ def aggregate_custom_sql(urls, nivel, sql_expr):
         "100.0 * SUM(CASE WHEN p25_sexo = 1 THEN 1 END) / COUNT(*)"
 
     El plugin envuelve la expresión con el GROUP BY geográfico.
+    `urls` pueden ser URLs remotas o rutas locales.
     Retorna DataFrame [geo_code, valor].
     """
-    con = _make_con()
-    src, geo_select, group = _build_geo_parts(con, urls, nivel)
+    con = _make_con(urls)
+    src, geo_select, group, params = _build_geo_parts(con, urls, nivel, departamento)
 
     sql = f"""
         SELECT {geo_select},
@@ -619,16 +617,12 @@ def aggregate_custom_sql(urls, nivel, sql_expr):
         GROUP BY {group}
     """
     try:
-        df = con.execute(sql).df()
+        df = con.execute(sql, params).df()
     finally:
         _close(con)
     df["geo_code"] = df["geo_code"].astype(str).str.zfill(_pad_width(nivel))
     return df
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Parallel download
-# ─────────────────────────────────────────────────────────────────────────────
 
 def cleanup():
     """
@@ -643,63 +637,3 @@ def cleanup():
         gc.collect()
     except Exception:
         pass
-
-
-def download_parallel(anio, tabla, departamento=None, progress_cb=None):
-    """
-    Descarga archivos parquet en paralelo (hasta 4 hilos simultáneos).
-    Retorna lista de rutas locales.
-    """
-    from .data_loader import get_cached_paths, is_cached
-    import concurrent.futures
-
-    # Si ya están en caché, retornar inmediatamente
-    if is_cached(anio, tabla, departamento):
-        if progress_cb:
-            progress_cb(100)
-        return get_cached_paths(anio, tabla, departamento)
-
-    urls = get_parquet_urls(anio, tabla, departamento)
-    year_dir = _year_cache_dir(anio)
-
-    # Construir pares (url, dest_path)
-    tasks = []
-    for url in urls:
-        filename = url.split("/")[-1]
-        dest = year_dir / filename
-        tasks.append((url, dest))
-
-    # Progreso compartido entre hilos
-    lock = threading.Lock()
-    completed_bytes = [0]
-    total_files = len(tasks)
-    files_done = [0]
-
-    def download_one(url_dest):
-        url, dest = url_dest
-        if dest.exists():
-            with lock:
-                files_done[0] += 1
-                if progress_cb:
-                    progress_cb(int(files_done[0] / total_files * 100))
-            return str(dest)
-
-        def per_file_progress(pct):
-            with lock:
-                if progress_cb:
-                    base = (files_done[0] / total_files) * 100
-                    current = (pct / 100) * (1 / total_files) * 100
-                    progress_cb(min(99, int(base + current)))
-
-        _download_file(url, dest, per_file_progress)
-        with lock:
-            files_done[0] += 1
-            if progress_cb:
-                progress_cb(int(files_done[0] / total_files * 100))
-        return str(dest)
-
-    max_workers = min(4, len(tasks))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        paths = list(executor.map(download_one, tasks))
-
-    return paths

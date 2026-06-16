@@ -1,9 +1,10 @@
 """
 Agrega microdatos censales por unidad geográfica.
 Soporta: conteo, media, suma, y porcentaje de una categoría.
-"""
 
-import pandas as pd
+Los DataFrames provienen del motor DuckDB (query_engine); este módulo solo los
+post-procesa (nombres geográficos, formato de geo_code), sin importar pandas.
+"""
 
 # Caché en memoria para evitar consultas repetidas en la misma sesión
 _var_dict_cache = {}          # {(anio, tabla): {variable: {"label","tipo"}}}
@@ -28,7 +29,8 @@ TABLA_ENTIDADES = {
 
 
 def agregar_datos(paths_or_urls, nivel, variable="__count__",
-                  agg="__count__", category=None, remote=False):
+                  agg="__count__", category=None, remote=False,
+                  departamento=None):
     """
     Agrega datos censales por unidad geográfica.
 
@@ -37,16 +39,15 @@ def agregar_datos(paths_or_urls, nivel, variable="__count__",
     - variable: nombre de columna o "__count__"
     - agg: "__count__" | "mean" | "sum" | "pct_category"
     - category: valor de categoría (str) cuando agg="pct_category"
-    - remote: True si son URLs remotas
+    - remote: ignorado (DuckDB lee local y remoto igual); se conserva por compat.
+    - departamento: código "01"…"09" para filtrar la agregación a ese
+      departamento (solo aplica a nivel municipal).
 
     Retorna DataFrame [geo_code, geo_nombre, valor].
     """
-    from .query_engine import aggregate_remote, aggregate_local, duckdb_available
+    from .query_engine import aggregate_geo
 
-    if remote and duckdb_available():
-        df = aggregate_remote(paths_or_urls, nivel, variable, agg, category)
-    else:
-        df = aggregate_local(paths_or_urls, nivel, variable, agg, category)
+    df = aggregate_geo(paths_or_urls, nivel, variable, agg, category, departamento)
 
     pad = 2 if nivel == "departamento" else 6
     df["geo_code"] = df["geo_code"].astype(str).str.zfill(pad)
@@ -54,34 +55,27 @@ def agregar_datos(paths_or_urls, nivel, variable="__count__",
     if nivel == "departamento":
         df["geo_nombre"] = df["geo_code"].map(DEPT_NAMES).fillna(df["geo_code"])
     else:
-        df["geo_nombre"] = df["geo_code"]
+        from .layer_builder import geo_nombres
+        nombres = geo_nombres("municipio")
+        df["geo_nombre"] = df["geo_code"].map(nombres).fillna(df["geo_code"])
 
     return df[["geo_code", "geo_nombre", "valor"]]
 
 
 def resumen_nacional(paths_or_urls, variable="__count__", agg="__count__",
-                     category=None, remote=False):
-    """Valor nacional (un escalar) del indicador, sin desagregar por geografía."""
-    from .query_engine import (
-        aggregate_national_remote, aggregate_national_local, duckdb_available
-    )
-    if remote and duckdb_available():
-        return aggregate_national_remote(paths_or_urls, variable, agg, category)
-    return aggregate_national_local(paths_or_urls, variable, agg, category)
+                     category=None, remote=False, departamento=None):
+    """Valor de referencia (un escalar) del indicador, sin desagregar por geografía.
+
+    `remote` se ignora (DuckDB lee local y remoto igual). Si se pasa
+    `departamento`, el escalar es del departamento (referencia departamental)."""
+    from .query_engine import aggregate_national
+    return aggregate_national(paths_or_urls, variable, agg, category, departamento)
 
 
 def get_columns(path_or_url, remote=False):
-    """Lista columnas del parquet (solo lee el schema/footer)."""
-    from .query_engine import get_columns_from_path, get_columns_remote, duckdb_available
-
-    if remote and duckdb_available():
-        return get_columns_remote(path_or_url)
-    if not remote:
-        try:
-            return get_columns_from_path(path_or_url)
-        except Exception:
-            return []
-    return []
+    """Lista columnas del parquet (solo lee el schema/footer), local o remoto."""
+    from .query_engine import get_columns as qe_get_columns
+    return qe_get_columns(path_or_url)
 
 
 def _load_var_dict(anio, tabla=None):
@@ -101,17 +95,19 @@ def _load_var_dict(anio, tabla=None):
         return _var_dict_cache[cache_key]
 
     from .data_loader import download_codebook
+    from .query_engine import read_parquet_local_df
 
     # Los diccionarios son diminutos (<1 MB): se descargan una vez y se leen con
-    # pyarrow. Así NO dependemos de que DuckDB esté listo (evita que falten las
-    # etiquetas en datos cacheados localmente mientras el motor aún instala).
+    # DuckDB. Si DuckDB aún se está instalando, read_parquet_local_df devuelve
+    # None y NO cacheamos: se reintenta cuando el motor esté listo.
     path = download_codebook(anio)
     if not path:
         return {}  # NO cachear: reintentar cuando haya red / archivo
 
     try:
-        import pyarrow.parquet as pq
-        df = pq.read_table(path).to_pandas()
+        df = read_parquet_local_df(path)
+        if df is None:
+            return {}  # DuckDB aún no listo: reintentar más tarde
 
         col_var  = _find_col(df, ["variable", "nombre_variable", "var", "nombre"])
         col_desc = _find_col(df, ["label", "etiqueta_variable", "descripcion",
@@ -153,7 +149,7 @@ def get_var_types(anio, tabla=None):
 def get_value_labels(anio, variable, tabla=None):
     """
     Retorna dict {codigo_str: etiqueta_str} para una variable categórica, leyendo
-    diccionario_etiquetas.parquet localmente con pyarrow (sin depender de DuckDB).
+    diccionario_etiquetas.parquet localmente con DuckDB.
 
     Si se pasa `tabla`, prioriza las etiquetas de esa tabla (algunas variables
     se repiten en varias tablas con códigos distintos). Si el filtro deja todo
@@ -164,14 +160,16 @@ def get_value_labels(anio, variable, tabla=None):
         return _val_labels_cache[cache_key]
 
     from .data_loader import download_labels_codebook
+    from .query_engine import read_parquet_local_df
 
     path = download_labels_codebook(anio)
     if not path:
         return {}  # NO cachear: reintentar cuando haya red / archivo
 
     try:
-        import pyarrow.parquet as pq
-        df = pq.read_table(path).to_pandas()
+        df = read_parquet_local_df(path)
+        if df is None:
+            return {}  # DuckDB aún no listo: reintentar más tarde
 
         col_var = _find_col(df, ["variable", "var", "nombre_variable"])
         col_val = _find_col(df, ["valor", "codigo", "code", "value"])
@@ -198,7 +196,7 @@ def get_value_labels(anio, variable, tabla=None):
         return {}
 
 
-def agregar_expresion(paths_or_urls, nivel, sql_expr):
+def agregar_expresion(paths_or_urls, nivel, sql_expr, departamento=None):
     """
     Agrega datos con una expresión SQL personalizada del usuario.
     Requiere DuckDB (consulta remota o local vía HTTP).
@@ -210,7 +208,7 @@ def agregar_expresion(paths_or_urls, nivel, sql_expr):
             "La expresión SQL personalizada requiere DuckDB.\n"
             "Espera a que termine la instalación automática."
         )
-    df = aggregate_custom_sql(paths_or_urls, nivel, sql_expr)
+    df = aggregate_custom_sql(paths_or_urls, nivel, sql_expr, departamento)
 
     pad = 2 if nivel == "departamento" else 6
     df["geo_code"] = df["geo_code"].astype(str).str.zfill(pad)
@@ -218,34 +216,11 @@ def agregar_expresion(paths_or_urls, nivel, sql_expr):
     if nivel == "departamento":
         df["geo_nombre"] = df["geo_code"].map(DEPT_NAMES).fillna(df["geo_code"])
     else:
-        df["geo_nombre"] = df["geo_code"]
+        from .layer_builder import geo_nombres
+        nombres = geo_nombres("municipio")
+        df["geo_nombre"] = df["geo_code"].map(nombres).fillna(df["geo_code"])
 
     return df[["geo_code", "geo_nombre", "valor"]]
-
-
-def clear_caches():
-    """Limpia los cachés en memoria y los diccionarios descargados a disco.
-
-    Borrar los diccionarios locales fuerza a re-descargarlos: útil cuando se
-    actualiza un release de GitHub con nuevas variables/etiquetas/tipos.
-    """
-    _var_dict_cache.clear()
-    _val_labels_cache.clear()
-    try:
-        from .query_engine import _schema_cache
-        _schema_cache.clear()
-    except Exception:
-        pass
-    # Borrar los parquet de diccionario en caché local (se re-descargan solos)
-    try:
-        from .data_loader import cache_dir
-        for f in cache_dir().rglob("diccionario_*.parquet"):
-            try:
-                f.unlink()
-            except Exception:
-                pass
-    except Exception:
-        pass
 
 
 def _find_col(df, candidates):

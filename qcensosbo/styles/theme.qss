@@ -89,18 +89,6 @@ QProgressBar#stat_bar::chunk {
     border-radius: 2px;
 }
 
-QPushButton#btn_clear_cache {
-    border: none;
-    font-size: 10px;
-    color: palette(mid);
-    padding: 2px 6px;
-    text-decoration: underline;
-}
-
-QPushButton#btn_clear_cache:hover {
-    color: palette(text);
-}
-
 QPushButton#btn_consultar {
     border: 1px solid palette(highlight);
     border-radius: 4px;

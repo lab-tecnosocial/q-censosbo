@@ -1,5 +1,9 @@
 """
-Descarga y caché de archivos parquet desde GitHub Releases del paquete censosbo.
+URLs de los releases del paquete censosbo y descarga/caché de los diccionarios.
+
+Los datos (parquet grandes) NO se descargan: DuckDB los consulta en remoto sin
+bajarlos. Solo los diccionarios (variables y etiquetas, <1 MB) se descargan y
+cachean localmente para leerlos rápido.
 
 Estructura de releases:
   - 2024 personas: particionado por departamento (persona_dep01.parquet … persona_dep09.parquet)
@@ -96,50 +100,6 @@ def _download_file(url, dest_path, progress_cb=None):
         raise
 
 
-def download_parquet(anio, tabla, departamento=None, progress_cb=None):
-    """
-    Descarga el/los parquet para (anio, tabla), opcionalmente filtrando por departamento.
-
-    - anio: int — año del censo (2024, 2012, 2001, 1992, 1976)
-    - tabla: str — "personas", "viviendas", "emigracion", "mortalidad"
-    - departamento: str|None — código de depto ("01"…"09") o None para todos
-    - progress_cb: callable(int) — recibe 0-100
-
-    Retorna lista de rutas locales (str) de los archivos descargados.
-    """
-    tag = RELEASES[anio]
-    year_dir = _year_cache_dir(anio)
-    paths = []
-
-    if anio == 2024 and tabla == "personas":
-        codes = [departamento] if departamento else DEPT_CODES
-        total_files = len(codes)
-        for idx, code in enumerate(codes):
-            filename = f"persona_dep{code}.parquet"
-            dest = year_dir / filename
-            url = f"{BASE_URL}/{tag}/{filename}"
-
-            def make_cb(file_idx, file_count, outer_cb):
-                def cb(pct):
-                    if outer_cb:
-                        overall = int((file_idx / file_count + pct / 100 / file_count) * 100)
-                        outer_cb(overall)
-                return cb
-
-            _download_file(url, dest, make_cb(idx, total_files, progress_cb))
-            paths.append(str(dest))
-    else:
-        filename = TABLE_FILES.get((anio, tabla))
-        if not filename:
-            raise ValueError(f"Tabla '{tabla}' no disponible para año {anio}")
-        dest = year_dir / filename
-        url = f"{BASE_URL}/{tag}/{filename}"
-        _download_file(url, dest, progress_cb)
-        paths.append(str(dest))
-
-    return paths
-
-
 def download_codebook(anio, progress_cb=None):
     """
     Descarga el diccionario de variables para el año dado.
@@ -159,30 +119,6 @@ def download_codebook(anio, progress_cb=None):
         return str(dest)
     except Exception:
         return None
-
-
-def is_cached(anio, tabla, departamento=None):
-    """Verifica si los datos están en caché local."""
-    year_dir = _year_cache_dir(anio)
-    if anio == 2024 and tabla == "personas":
-        codes = [departamento] if departamento else DEPT_CODES
-        return all((year_dir / f"persona_dep{c}.parquet").exists() for c in codes)
-    filename = TABLE_FILES.get((anio, tabla))
-    if not filename:
-        return False
-    return (year_dir / filename).exists()
-
-
-def get_cached_paths(anio, tabla, departamento=None):
-    """Retorna rutas locales si están en caché, lista vacía si no."""
-    if not is_cached(anio, tabla, departamento):
-        return []
-    year_dir = _year_cache_dir(anio)
-    if anio == 2024 and tabla == "personas":
-        codes = [departamento] if departamento else DEPT_CODES
-        return [str(year_dir / f"persona_dep{c}.parquet") for c in codes]
-    filename = TABLE_FILES.get((anio, tabla))
-    return [str(year_dir / filename)] if filename else []
 
 
 def download_labels_codebook(anio, progress_cb=None):

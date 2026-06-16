@@ -1,11 +1,17 @@
 """
 Crea capas vectoriales QGIS a partir de datos censales agregados y geometrías GeoJSON bundled.
+
+El GeoJSON resultante se guarda en una carpeta de caché ESTABLE del plugin
+(`~/.censosbo_qgis/capas/`), no en el temp del sistema: así, si el usuario guarda
+el proyecto QGIS, la capa sigue apuntando a un archivo que persiste entre sesiones.
 """
 
 import json
-import os
-import tempfile
+import re
+import uuid
 from pathlib import Path
+
+from .data_loader import cache_dir
 
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -30,6 +36,37 @@ def _get_geo_code(props, nivel):
         iprov = str(props.get("iprov", "")).strip().zfill(2)
         imun  = str(props.get("imun",  "")).strip().zfill(2)
         return idep + iprov + imun
+
+
+_nombres_cache = {}
+
+
+def geo_nombres(nivel):
+    """Mapeo {geo_code: nombre} leído del GeoJSON bundled (cacheado en memoria).
+
+    Reutiliza la geometría que ya viene con el plugin como única fuente de
+    verdad de los nombres: departamento → `nombre_dep`, municipio → `nombre_mun`.
+    Así el resumen puede mostrar un ranking legible por nombre, igual a cualquier
+    nivel, sin descargar ni duplicar un archivo aparte.
+    """
+    if nivel in _nombres_cache:
+        return _nombres_cache[nivel]
+    path = GEO_FILES.get(nivel)
+    campo = "nombre_dep" if nivel == "departamento" else "nombre_mun"
+    result = {}
+    if path and path.exists():
+        try:
+            with open(path, encoding="utf-8") as f:
+                geojson = json.load(f)
+            for feature in geojson.get("features", []):
+                props = feature.get("properties", {})
+                nombre = props.get(campo)
+                if nombre:
+                    result[_get_geo_code(props, nivel)] = str(nombre)
+        except Exception:
+            result = {}
+    _nombres_cache[nivel] = result
+    return result
 
 
 def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
@@ -78,18 +115,24 @@ def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
 
     geojson["features"] = features_out
 
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".geojson", delete=False, encoding="utf-8"
-    )
-    json.dump(geojson, tmp, ensure_ascii=False)
-    tmp.close()
+    # Escribir en la carpeta de caché estable del plugin (no en el temp del
+    # sistema). Nombre único por generación para no pisar una capa ya cargada.
+    capas_dir = cache_dir() / "capas"
+    capas_dir.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", nombre_capa) or "capa"
+    out_path = capas_dir / f"{safe}_{uuid.uuid4().hex[:8]}.geojson"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(geojson, f, ensure_ascii=False)
 
     from qgis.core import QgsVectorLayer, QgsProject
 
-    layer = QgsVectorLayer(tmp.name, nombre_capa, "ogr")
+    layer = QgsVectorLayer(str(out_path), nombre_capa, "ogr")
     if not layer.isValid():
-        os.unlink(tmp.name)
-        raise RuntimeError(f"No se pudo cargar la capa: {tmp.name}")
+        try:
+            out_path.unlink()
+        except OSError:
+            pass
+        raise RuntimeError(f"No se pudo cargar la capa: {out_path}")
 
     if is_categorical:
         _apply_categorical_style(layer, "valor_censo", labels=value_labels)

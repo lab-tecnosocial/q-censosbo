@@ -146,21 +146,19 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
         urls = get_parquet_urls(anio, tabla)
         feedback.setProgress(10)
 
+        if not duckdb_available():
+            raise Exception(
+                "El motor de consulta (DuckDB) no está disponible. Abre una vez "
+                "el panel de Q-CensosBo (instala DuckDB automáticamente) y revisa "
+                "tu conexión a internet, luego vuelve a ejecutar este algoritmo."
+            )
+
         if sql_expr:
             feedback.setProgressText("Ejecutando expresión SQL…")
             df = agregar_expresion(urls, nivel, sql_expr)
-        elif duckdb_available():
-            feedback.setProgressText("Consultando datos remotos…")
-            df = agregar_datos(urls, nivel, variable, agg, category, remote=True)
         else:
-            feedback.setProgressText("Descargando y agregando datos localmente…")
-            from ...core.query_engine import download_parallel
-            paths = download_parallel(
-                anio, tabla,
-                progress_cb=lambda p: feedback.setProgress(10 + int(p * 0.7)),
-            )
-            feedback.setProgress(80)
-            df = agregar_datos(paths, nivel, variable, agg, category, remote=False)
+            feedback.setProgressText("Consultando datos remotos…")
+            df = agregar_datos(urls, nivel, variable, agg, category)
 
         feedback.setProgress(85)
         if feedback.isCanceled():
