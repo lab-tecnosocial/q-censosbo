@@ -16,8 +16,10 @@ acción del usuario más allá de instalar el plugin).
 """
 
 import os
+import re
 import subprocess
 import sys
+import sysconfig
 
 from .data_loader import (
     BASE_URL, RELEASES, TABLE_FILES, DEPT_CODES,
@@ -90,28 +92,55 @@ def duckdb_available():
 def _python_executable():
     """Ruta al intérprete Python real de QGIS.
 
-    En Windows `sys.executable` suele apuntar a `qgis-bin.exe`, no a un python
-    invocable con `-m pip`. Buscamos el `python` real junto a `sys.prefix` /
-    al ejecutable; si no se encuentra, caemos a `sys.executable`.
+    `sys.executable` suele apuntar al binario de la app, no a un python invocable
+    con `-m pip`: en Windows es `qgis-bin.exe`; en macOS es `.../Contents/MacOS/QGIS`.
+
+    Estrategia: `sysconfig` conoce de forma autoritativa el directorio de binarios
+    del intérprete que ESTÁ ejecutando QGIS (su python embebido, no el del sistema);
+    lo usamos como fuente principal. Como respaldo para layouts atípicos, buscamos
+    el ejecutable —incluyendo nombres versionados (`python3.12`)— en el directorio
+    del propio ejecutable y en los prefijos. Si nada aparece, devuelve None (el
+    caller avisa para reintentar; NUNCA caemos al binario de la app, que relanzaría
+    otra instancia de QGIS).
     """
     exe = sys.executable or ""
     if os.path.basename(exe).lower().startswith("python"):
         return exe
 
-    exe_dir = os.path.dirname(exe)
     if os.name == "nt":
-        names, subdirs = ("python.exe", "python3.exe"), ("", "Scripts")
+        rx = re.compile(r"^python(\d+(\.\d+)*)?\.exe$", re.IGNORECASE)
+        subdirs = ("", "Scripts", "bin")
     else:
-        names, subdirs = ("python3", "python"), ("bin",)
+        rx = re.compile(r"^python(\d+(\.\d+)*)?$")
+        subdirs = ("", "bin")
 
-    cand_dirs = [sys.prefix, sys.exec_prefix, exe_dir]
-    for base in cand_dirs:
+    # Fuente autoritativa primero (sysconfig), luego respaldos por ubicación.
+    # En Windows el python.exe vive en el PADRE del dir "scripts"
+    # (…/Python312/python.exe junto a …/Python312/Scripts), así que incluimos
+    # también ese padre. En macOS el ejecutable está junto al binario de la app.
+    scripts = sysconfig.get_path("scripts")
+    bases = [
+        scripts,
+        os.path.dirname(scripts) if scripts else None,
+        sysconfig.get_config_var("BINDIR"),
+        os.path.dirname(exe),
+        sys.prefix, sys.exec_prefix, sys.base_prefix,
+    ]
+    for base in bases:
+        if not base:
+            continue
         for sub in subdirs:
+            d = os.path.join(base, sub) if sub else base
+            try:
+                names = sorted(os.listdir(d))
+            except OSError:
+                continue
             for name in names:
-                c = os.path.join(base, sub, name) if sub else os.path.join(base, name)
-                if os.path.isfile(c):
-                    return c
-    return exe
+                if rx.match(name):
+                    cand = os.path.join(d, name)
+                    if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                        return cand
+    return None
 
 
 def _run_pip(python, extra_args, timeout=180):
@@ -169,6 +198,19 @@ def install_duckdb(status_cb=None, done_cb=None):
         status_cb("Instalando DuckDB (solo la primera vez)…")
 
     python = _python_executable()
+    # El flujo normal instala con el Python de QGIS detectado. Solo si NO se pudo
+    # ubicar (None) evitamos ejecutar pip: hacerlo contra el binario de la app
+    # relanzaría otra instancia de QGIS. En ese caso avisamos para reintentar
+    # (reabrir el panel vuelve a llamar a install_duckdb desde showEvent).
+    if not python:
+        msg = ("No se pudo ubicar el Python de QGIS para instalar DuckDB. "
+               "Reabre el panel para reintentar.")
+        if status_cb:
+            status_cb(msg)
+        if done_cb:
+            done_cb(False, msg)
+        return
+
     attempts = [
         ([], "Instalando DuckDB (solo la primera vez)…"),
         (["--user"], "Reintentando en tu perfil de usuario…"),
