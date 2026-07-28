@@ -9,11 +9,14 @@ Estructura de releases:
   - 2024 personas: particionado por departamento (persona_dep01.parquet … persona_dep09.parquet)
   - 2024 otras tablas: un archivo nacional (vivienda.parquet, etc.)
   - Históricos (2012, 2001, 1992, 1976): un archivo nacional por tabla
+  - Fichas por manzano/comunidad (2024): release propio, ver `fichas.py`
 """
 
 import os
 import urllib.request
 from pathlib import Path
+
+from .fichas import TAG as FICHAS_TAG
 
 BASE_URL = "https://github.com/lab-tecnosocial/censosbo/releases/download"
 
@@ -25,12 +28,20 @@ RELEASES = {
     1976: "data-1976-v1.0.0",
 }
 
+# Tablas que NO viven en el release de su año, sino en uno propio.
+TABLE_RELEASES = {
+    (2024, "unidades"): FICHAS_TAG,
+    (2024, "fichas"):   FICHAS_TAG,
+}
+
 # Nombre del archivo por (año, tabla). 2024/personas es especial (particionado).
 TABLE_FILES = {
     (2024, "personas"):    None,          # especial: persona_dep{dd}.parquet
     (2024, "viviendas"):   "vivienda.parquet",
     (2024, "emigracion"):  "emigracion.parquet",
     (2024, "mortalidad"):  "mortalidad.parquet",
+    (2024, "unidades"):    "unidad.parquet",
+    (2024, "fichas"):      "ficha.parquet",
     (2012, "personas"):    "persona.parquet",
     (2012, "viviendas"):   "vivienda.parquet",
     (2012, "emigracion"):  "emigracion.parquet",
@@ -56,6 +67,15 @@ DICT_FILES = {
 DEPT_CODES = ["01", "02", "03", "04", "05", "06", "07", "08", "09"]
 
 
+def release_tag(anio, tabla=None):
+    """Tag del release donde vive una tabla.
+
+    Casi todas las tablas están en el release de su año; las fichas por manzano
+    y comunidad tienen el suyo (ver TABLE_RELEASES).
+    """
+    return TABLE_RELEASES.get((anio, tabla)) or RELEASES[anio]
+
+
 def cache_dir():
     path = Path.home() / ".censosbo_qgis"
     path.mkdir(parents=True, exist_ok=True)
@@ -64,6 +84,13 @@ def cache_dir():
 
 def _year_cache_dir(anio):
     path = cache_dir() / str(anio)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def fichas_cache_dir():
+    """Caché de los archivos del release de fichas, separada de los años."""
+    path = cache_dir() / "fichas"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -140,11 +167,28 @@ def download_labels_codebook(anio, progress_cb=None):
         return None
 
 
+def download_ficha_file(filename, progress_cb=None):
+    """Descarga (y cachea) un archivo del release de fichas. Ruta local o None.
+
+    Se usa para las geometrías de manzanos y comunidades, que hay que leer
+    completas para dibujar un municipio.
+    """
+    dest = fichas_cache_dir() / filename
+    url = f"{BASE_URL}/{FICHAS_TAG}/{filename}"
+    try:
+        _download_file(url, dest, progress_cb)
+        return str(dest)
+    except Exception:
+        return None
+
+
 def get_tables_for_year(anio):
     """Retorna lista de (etiqueta, clave) de tablas disponibles para el año."""
     available = {
         2024: [("Personas", "personas"), ("Viviendas", "viviendas"),
-               ("Emigración", "emigracion"), ("Mortalidad", "mortalidad")],
+               ("Emigración", "emigracion"), ("Mortalidad", "mortalidad"),
+               ("Ficha de indicadores (manzano/comunidad)", "fichas"),
+               ("Unidades censales (manzano/comunidad)", "unidades")],
         2012: [("Personas", "personas"), ("Viviendas", "viviendas"),
                ("Emigración", "emigracion")],
         2001: [("Personas", "personas"), ("Viviendas", "viviendas")],

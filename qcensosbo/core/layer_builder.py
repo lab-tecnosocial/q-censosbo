@@ -1,7 +1,14 @@
 """
-Crea capas vectoriales QGIS a partir de datos censales agregados y geometrías GeoJSON bundled.
+Crea capas vectoriales QGIS a partir de datos censales agregados.
 
-El GeoJSON resultante se guarda en una carpeta de caché ESTABLE del plugin
+Dos fuentes de geometría, según el nivel:
+  - departamento y municipio → GeoJSON empaquetado con el plugin (`data/`), que
+    se enriquece con el valor y se escribe como GeoJSON.
+  - manzano y comunidad → geometrías WKB del release de fichas (ver `fichas.py`),
+    que se materializan en un GeoPackage: un municipio son miles de polígonos y
+    GeoJSON ahí es lento y enorme.
+
+En ambos casos el archivo se guarda en una carpeta de caché ESTABLE del plugin
 (`~/.censosbo_qgis/capas/`), no en el temp del sistema: así, si el usuario guarda
 el proyecto QGIS, la capa sigue apuntando a un archivo que persiste entre sesiones.
 """
@@ -69,6 +76,25 @@ def geo_nombres(nivel):
     return result
 
 
+def municipios_por_depto(idep):
+    """Municipios de un departamento: [(nombre, geo_code de 6 dígitos)], ordenados.
+
+    Sale del mismo GeoJSON empaquetado que ya provee los nombres, así el selector
+    de municipio no necesita red ni un archivo aparte.
+    """
+    prefijo = str(idep).zfill(2)
+    nombres = geo_nombres("municipio")
+    items = [(nombre, code) for code, nombre in nombres.items()
+             if code.startswith(prefijo)]
+    return sorted(items, key=lambda t: t[0])
+
+
+def _capas_dir():
+    path = cache_dir() / "capas"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
                departamento=None, is_categorical=False, clasificacion="jenks",
                value_labels=None):
@@ -117,10 +143,8 @@ def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
 
     # Escribir en la carpeta de caché estable del plugin (no en el temp del
     # sistema). Nombre único por generación para no pisar una capa ya cargada.
-    capas_dir = cache_dir() / "capas"
-    capas_dir.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", nombre_capa) or "capa"
-    out_path = capas_dir / f"{safe}_{uuid.uuid4().hex[:8]}.geojson"
+    out_path = _capas_dir() / f"{safe}_{uuid.uuid4().hex[:8]}.geojson"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(geojson, f, ensure_ascii=False)
 
@@ -148,10 +172,11 @@ def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
     return layer
 
 
-def _apply_graduated_style(layer, field_name, n_classes=5, clasificacion="jenks"):
-    """Aplica simbología graduada con el método de clasificación elegido."""
+def _graduated_renderer(layer, field_name, n_classes=5, clasificacion="jenks"):
+    """Construye el renderer graduado de una capa (o None si algo falla)."""
     try:
         from qgis.core import (
+            NULL,
             QgsGraduatedSymbolRenderer,
             QgsStyle,
             QgsClassificationJenks,
@@ -178,9 +203,12 @@ def _apply_graduated_style(layer, field_name, n_classes=5, clasificacion="jenks"
 
         # Evitar clases duplicadas ("24–24" repetido) cuando hay muy pocos
         # valores distintos: no tiene sentido pedir más clases que valores únicos.
+        # Ojo: un campo vacío llega como QVariant nulo, NO como None, así que
+        # `is not None` no lo descarta; hay que comparar con el NULL de QGIS.
+        # A nivel de manzano importa: la mitad de las unidades no tiene ficha.
         distinct = {
             feat[field_name] for feat in layer.getFeatures()
-            if feat[field_name] is not None
+            if feat[field_name] != NULL
         }
         n_classes = max(1, min(n_classes, len(distinct)))
 
@@ -194,11 +222,279 @@ def _apply_graduated_style(layer, field_name, n_classes=5, clasificacion="jenks"
         fmt.setPrecision(2)
         fmt.setTrimTrailingZeroes(True)
         renderer.setLabelFormat(fmt)
+        return renderer
+    except Exception:
+        return None
 
-        layer.setRenderer(renderer)
+
+def _apply_graduated_style(layer, field_name, n_classes=5, clasificacion="jenks"):
+    """Aplica simbología graduada con el método de clasificación elegido."""
+    renderer = _graduated_renderer(layer, field_name, n_classes, clasificacion)
+    if renderer is None:
+        return
+    layer.setRenderer(renderer)
+    layer.triggerRepaint()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Nivel manzano / comunidad
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Nombre de la tabla dentro del GeoPackage y tipo de geometría de cada área.
+_AREA_SPEC = {
+    "urbana": ("manzanos",    "MultiPolygon", "Urbana"),
+    "rural":  ("comunidades", "Point",        "Rural"),
+}
+
+
+def _geometria_municipio(municipio):
+    """(QgsGeometry, nombre) del municipio, desde el GeoJSON ya empaquetado.
+
+    Sirve de contexto para los mapas de manzano y comunidad: sin el límite
+    municipal alrededor, unos cuantos polígonos sueltos quedan "al aire" y no se
+    sabe dónde caen. Retorna (None, "") si no se encuentra.
+    """
+    from qgis.core import QgsGeometry, QgsVectorLayer
+
+    path = GEO_FILES.get("municipio")
+    if not path or not path.exists():
+        return None, ""
+    src = QgsVectorLayer(str(path), "tmp_municipio", "ogr")
+    if not src.isValid():
+        return None, ""
+
+    code = str(municipio).zfill(6)
+    campos = [f.name() for f in src.fields()]
+    for feat in src.getFeatures():
+        props = {name: feat[name] for name in campos}
+        if _get_geo_code(props, "municipio") == code:
+            # Copia explícita: la feature (y su geometría) muere con el iterador.
+            return QgsGeometry(feat.geometry()), str(props.get("nombre_mun") or code)
+    return None, ""
+
+
+def _capa_memoria_municipio(geom, nombre):
+    """Capa de una sola feature con el límite del municipio."""
+    from qgis.core import (
+        QgsVectorLayer, QgsFeature, QgsField, QgsFields,
+    )
+    from qgis.PyQt.QtCore import QVariant
+
+    layer = QgsVectorLayer("MultiPolygon?crs=EPSG:4326", "municipio", "memory")
+    fields = QgsFields()
+    fields.append(QgsField("nombre_geo", QVariant.String))
+    layer.dataProvider().addAttributes(fields)
+    layer.updateFields()
+
+    feat = QgsFeature(layer.fields())
+    feat.setGeometry(geom)
+    feat.setAttributes([nombre])
+    layer.dataProvider().addFeatures([feat])
+    layer.updateExtents()
+    return layer
+
+
+def _estilo_contexto(layer):
+    """Relleno tenue y borde marcado: da referencia sin competir con los datos."""
+    try:
+        from qgis.core import QgsFillSymbol
+        simbolo = QgsFillSymbol.createSimple({
+            "color": "235,235,235,90",
+            "outline_color": "90,90,90,255",
+            "outline_width": "0.4",
+        })
+        layer.renderer().setSymbol(simbolo)
         layer.triggerRepaint()
     except Exception:
         pass
+
+
+def _capa_memoria_unidades(geoms, lookup, area):
+    """Capa temporal en memoria con las geometrías WKB de un área.
+
+    Las unidades sin dato entran con `valor_censo` nulo: así el mapa muestra el
+    tejido completo del municipio (el INE reserva la ficha de las unidades con
+    poca población) en vez de dejar huecos sin explicar.
+    """
+    from qgis.core import (
+        QgsVectorLayer, QgsFeature, QgsGeometry, QgsField, QgsFields,
+    )
+    from qgis.PyQt.QtCore import QVariant
+
+    tabla, wkb_type, area_lbl = _AREA_SPEC[area]
+    layer = QgsVectorLayer(f"{wkb_type}?crs=EPSG:4326", tabla, "memory")
+
+    fields = QgsFields()
+    fields.append(QgsField("codigo", QVariant.String))
+    fields.append(QgsField("nombre_geo", QVariant.String))
+    fields.append(QgsField("area", QVariant.String))
+    fields.append(QgsField("valor_censo", QVariant.Double))
+    layer.dataProvider().addAttributes(fields)
+    layer.updateFields()
+
+    feats = []
+    for codigo, nombre, wkb in geoms:
+        geom = QgsGeometry()
+        geom.fromWkb(bytes(wkb))
+        if geom.isNull():
+            continue
+        f = QgsFeature(layer.fields())
+        f.setGeometry(geom)
+        valor = lookup.get(str(codigo))
+        f.setAttributes([str(codigo), str(nombre or ""), area_lbl,
+                         None if valor is None else float(valor)])
+        feats.append(f)
+
+    layer.dataProvider().addFeatures(feats)
+    layer.updateExtents()
+    return layer, tabla
+
+
+def _escribir_gpkg(layer, out_path, tabla, primera):
+    """Materializa una capa de memoria como tabla de un GeoPackage."""
+    from qgis.core import QgsVectorFileWriter, QgsCoordinateTransformContext
+
+    opts = QgsVectorFileWriter.SaveVectorOptions()
+    opts.driverName = "GPKG"
+    opts.layerName = tabla
+    opts.actionOnExistingFile = (
+        QgsVectorFileWriter.CreateOrOverwriteFile if primera
+        else QgsVectorFileWriter.CreateOrOverwriteLayer
+    )
+    res = QgsVectorFileWriter.writeAsVectorFormatV3(
+        layer, str(out_path), QgsCoordinateTransformContext(), opts)
+    if res[0] != QgsVectorFileWriter.NoError:
+        raise RuntimeError(f"No se pudo escribir el GeoPackage: {res[1]}")
+
+
+def _renderer_para_puntos(renderer):
+    """Adapta un renderer graduado de polígonos a símbolos de punto.
+
+    Las comunidades rurales son puntos y los manzanos polígonos, así que van en
+    capas distintas; clonar el renderer (mismos cortes, mismos colores) es lo que
+    hace comparables los dos mapas.
+    """
+    from qgis.core import QgsMarkerSymbol
+
+    clon = renderer.clone()
+    for i, rango in enumerate(clon.ranges()):
+        color = rango.symbol().color()
+        simbolo = QgsMarkerSymbol.createSimple({
+            "name": "circle", "size": "2", "outline_style": "no",
+        })
+        simbolo.setColor(color)
+        clon.updateRangeSymbol(i, simbolo)
+    return clon
+
+
+def _sin_borde(renderer):
+    """Quita el trazo de los polígonos: a escala de manzano tapa el relleno."""
+    from qgis.PyQt.QtCore import Qt
+    for rango in renderer.ranges():
+        capa_simbolo = rango.symbol().symbolLayer(0)
+        try:
+            capa_simbolo.setStrokeStyle(Qt.NoPen)
+        except AttributeError:
+            pass
+    return renderer
+
+
+def crear_capa_unidades(df_agregado, geoms, nombre_capa, iface=None,
+                        clasificacion="jenks", municipio=None):
+    """
+    Crea las capas de manzanos y/o comunidades de un municipio con el indicador.
+
+    - df_agregado: DataFrame [geo_code, geo_nombre, valor] a nivel unidad
+    - geoms:       {"urbana": [(codigo, nombre, wkb), …], "rural": [...]}
+    - nombre_capa: nombre base, y nombre del grupo de capas
+    - municipio:   código de 6 dígitos; si se pasa, se añade el límite municipal
+                   como capa de contexto debajo de los datos
+
+    Retorna la lista de capas creadas (los datos primero, el contexto al final).
+    """
+    from qgis.core import QgsProject, QgsVectorLayer
+
+    lookup = {str(r["geo_code"]): r["valor"] for _, r in df_agregado.iterrows()}
+    presentes = [a for a in ("urbana", "rural") if geoms.get(a)]
+    if not presentes:
+        raise RuntimeError(
+            "No hay geometrías para este municipio y área. Revisa la selección."
+        )
+
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", nombre_capa) or "capa"
+    out_path = _capas_dir() / f"{safe}_{uuid.uuid4().hex[:8]}.gpkg"
+
+    capas = []
+    for i, area in enumerate(presentes):
+        mem, tabla = _capa_memoria_unidades(geoms[area], lookup, area)
+        _escribir_gpkg(mem, out_path, tabla, primera=(i == 0))
+        etiqueta = nombre_capa if len(presentes) == 1 else f"{nombre_capa} · {tabla}"
+        capa = QgsVectorLayer(f"{out_path}|layername={tabla}", etiqueta, "ogr")
+        if not capa.isValid():
+            raise RuntimeError(f"No se pudo cargar la capa: {out_path} ({tabla})")
+        capas.append((area, capa))
+
+    # Un solo juego de cortes para las dos áreas: se calculan sobre la capa con
+    # más unidades y se reutilizan, para que los colores signifiquen lo mismo.
+    principal = max(capas, key=lambda t: t[1].featureCount())[1]
+    base = _graduated_renderer(principal, "valor_censo", clasificacion=clasificacion)
+
+    for area, capa in capas:
+        if base is None:
+            continue
+        renderer = base.clone() if area == "urbana" else _renderer_para_puntos(base)
+        if area == "urbana":
+            _sin_borde(renderer)
+        capa.setRenderer(renderer)
+        capa.triggerRepaint()
+
+    # Contexto: el límite del municipio al que pertenecen estas unidades. Va en
+    # el mismo GeoPackage para que la capa siga siendo autocontenida.
+    contexto = None
+    if municipio:
+        geom_mun, nombre_mun = _geometria_municipio(municipio)
+        if geom_mun is not None and not geom_mun.isNull():
+            mem = _capa_memoria_municipio(geom_mun, nombre_mun)
+            _escribir_gpkg(mem, out_path, "municipio", primera=False)
+            contexto = QgsVectorLayer(f"{out_path}|layername=municipio",
+                                      f"{nombre_mun} (contexto)", "ogr")
+            if contexto.isValid():
+                _estilo_contexto(contexto)
+            else:
+                contexto = None
+
+    proyecto = QgsProject.instance()
+    if len(capas) == 1 and contexto is None:
+        proyecto.addMapLayer(capas[0][1])
+    else:
+        grupo = proyecto.layerTreeRoot().insertGroup(0, nombre_capa)
+        # Orden de arriba (se dibuja encima) hacia abajo: las comunidades son
+        # puntos y quedarían tapadas por los polígonos urbanos; el contexto va
+        # al fondo, por debajo de todos los datos.
+        ordenadas = ([c for a, c in capas if a == "rural"]
+                     + [c for a, c in capas if a == "urbana"]
+                     + ([contexto] if contexto is not None else []))
+        for capa in ordenadas:
+            proyecto.addMapLayer(capa, False)
+            grupo.addLayer(capa)
+
+    resultado = [capa for _, capa in capas] + ([contexto] if contexto else [])
+
+    if iface:
+        # Encuadre sobre el municipio completo cuando hay contexto: es el marco
+        # de referencia, y siempre contiene a la mancha urbana.
+        extent = None
+        for capa in resultado:
+            ext = capa.extent()
+            if extent is None:
+                extent = ext
+            else:
+                extent.combineExtentWith(ext)
+        if extent is not None and not extent.isEmpty():
+            iface.mapCanvas().setExtent(extent)
+        iface.mapCanvas().refresh()
+
+    return resultado
 
 
 def _apply_categorical_style(layer, field_name, labels=None):
@@ -221,6 +517,7 @@ def _apply_categorical_style(layer, field_name, labels=None):
 
     try:
         from qgis.core import (
+            NULL,
             QgsCategorizedSymbolRenderer,
             QgsRendererCategory,
             QgsSymbol,
@@ -228,11 +525,12 @@ def _apply_categorical_style(layer, field_name, labels=None):
         )
         from qgis.PyQt.QtGui import QColor
 
-        # Recopilar valores únicos del campo
+        # Recopilar valores únicos del campo. Los vacíos llegan como QVariant
+        # nulo (no como None): sin descartarlos aparecería una categoría "NULL".
         values = sorted({
             str(feat[field_name])
             for feat in layer.getFeatures()
-            if feat[field_name] is not None
+            if feat[field_name] != NULL
         })
 
         style = QgsStyle.defaultStyle()

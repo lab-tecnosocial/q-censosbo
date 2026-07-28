@@ -1,0 +1,249 @@
+tabla,variable,etiqueta,bloque,tipo,expr,denominador
+fichas,pob_edad_0a19,Población de 0 a 19 años,poblacion,numerica,(pob_edad_0a19_h + pob_edad_0a19_m),(pob_total_h + pob_total_m)
+fichas,pob_edad_0a19_h,"Población de 0 a 19 años, hombres",poblacion,numerica,pob_edad_0a19_h,pob_total_h
+fichas,pob_edad_0a19_m,"Población de 0 a 19 años, mujeres",poblacion,numerica,pob_edad_0a19_m,pob_total_m
+fichas,pob_edad_20a39,Población de 20 a 39 años,poblacion,numerica,(pob_edad_20a39_h + pob_edad_20a39_m),(pob_total_h + pob_total_m)
+fichas,pob_edad_20a39_h,"Población de 20 a 39 años, hombres",poblacion,numerica,pob_edad_20a39_h,pob_total_h
+fichas,pob_edad_20a39_m,"Población de 20 a 39 años, mujeres",poblacion,numerica,pob_edad_20a39_m,pob_total_m
+fichas,pob_edad_40a59,Población de 40 a 59 años,poblacion,numerica,(pob_edad_40a59_h + pob_edad_40a59_m),(pob_total_h + pob_total_m)
+fichas,pob_edad_40a59_h,"Población de 40 a 59 años, hombres",poblacion,numerica,pob_edad_40a59_h,pob_total_h
+fichas,pob_edad_40a59_m,"Población de 40 a 59 años, mujeres",poblacion,numerica,pob_edad_40a59_m,pob_total_m
+fichas,pob_edad_60ymas,Población de 60 o más años,poblacion,numerica,(pob_edad_60ymas_h + pob_edad_60ymas_m),(pob_total_h + pob_total_m)
+fichas,pob_edad_60ymas_h,"Población de 60 o más años, hombres",poblacion,numerica,pob_edad_60ymas_h,pob_total_h
+fichas,pob_edad_60ymas_m,"Población de 60 o más años, mujeres",poblacion,numerica,pob_edad_60ymas_m,pob_total_m
+fichas,pob_total,Población total,poblacion,numerica,(pob_total_h + pob_total_m),
+fichas,pob_total_h,"Población total, hombres",poblacion,numerica,pob_total_h,
+fichas,pob_total_m,"Población total, mujeres",poblacion,numerica,pob_total_m,
+fichas,edu_ninguno,Nivel de instrucción ninguno,educacion,numerica,(edu_ninguno_h + edu_ninguno_m),(edu_total_h + edu_total_m)
+fichas,edu_ninguno_h,"Nivel de instrucción ninguno, hombres",educacion,numerica,edu_ninguno_h,edu_total_h
+fichas,edu_ninguno_m,"Nivel de instrucción ninguno, mujeres",educacion,numerica,edu_ninguno_m,edu_total_m
+fichas,edu_ns,Nivel de instrucción sin especificar,educacion,numerica,(edu_ns_h + edu_ns_m),(edu_total_h + edu_total_m)
+fichas,edu_ns_h,"Nivel de instrucción sin especificar, hombres",educacion,numerica,edu_ns_h,edu_total_h
+fichas,edu_ns_m,"Nivel de instrucción sin especificar, mujeres",educacion,numerica,edu_ns_m,edu_total_m
+fichas,edu_primaria,Nivel de instrucción primaria,educacion,numerica,(edu_primaria_h + edu_primaria_m),(edu_total_h + edu_total_m)
+fichas,edu_primaria_h,"Nivel de instrucción primaria, hombres",educacion,numerica,edu_primaria_h,edu_total_h
+fichas,edu_primaria_m,"Nivel de instrucción primaria, mujeres",educacion,numerica,edu_primaria_m,edu_total_m
+fichas,edu_secundaria,Nivel de instrucción secundaria,educacion,numerica,(edu_secundaria_h + edu_secundaria_m),(edu_total_h + edu_total_m)
+fichas,edu_secundaria_h,"Nivel de instrucción secundaria, hombres",educacion,numerica,edu_secundaria_h,edu_total_h
+fichas,edu_secundaria_m,"Nivel de instrucción secundaria, mujeres",educacion,numerica,edu_secundaria_m,edu_total_m
+fichas,edu_superior,Nivel de instrucción superior,educacion,numerica,(edu_superior_h + edu_superior_m),(edu_total_h + edu_total_m)
+fichas,edu_superior_h,"Nivel de instrucción superior, hombres",educacion,numerica,edu_superior_h,edu_total_h
+fichas,edu_superior_m,"Nivel de instrucción superior, mujeres",educacion,numerica,edu_superior_m,edu_total_m
+fichas,edu_total,Población de 19 o más años,educacion,numerica,(edu_total_h + edu_total_m),
+fichas,edu_total_h,"Población de 19 o más años, hombres",educacion,numerica,edu_total_h,
+fichas,edu_total_m,"Población de 19 o más años, mujeres",educacion,numerica,edu_total_m,
+fichas,salud_lugar_cajasalud,Acude a caja de salud,salud_lugar,numerica,(salud_lugar_cajasalud_h + salud_lugar_cajasalud_m),(salud_lugar_total_h + salud_lugar_total_m)
+fichas,salud_lugar_cajasalud_h,"Acude a caja de salud, hombres",salud_lugar,numerica,salud_lugar_cajasalud_h,salud_lugar_total_h
+fichas,salud_lugar_cajasalud_m,"Acude a caja de salud, mujeres",salud_lugar,numerica,salud_lugar_cajasalud_m,salud_lugar_total_m
+fichas,salud_lugar_casero,Acude a remedios caseros,salud_lugar,numerica,(salud_lugar_casero_h + salud_lugar_casero_m),(salud_lugar_total_h + salud_lugar_total_m)
+fichas,salud_lugar_casero_h,"Acude a remedios caseros, hombres",salud_lugar,numerica,salud_lugar_casero_h,salud_lugar_total_h
+fichas,salud_lugar_casero_m,"Acude a remedios caseros, mujeres",salud_lugar,numerica,salud_lugar_casero_m,salud_lugar_total_m
+fichas,salud_lugar_centroprivado,Acude a consultorio/clínica/hospital privado,salud_lugar,numerica,(salud_lugar_centroprivado_h + salud_lugar_centroprivado_m),(salud_lugar_total_h + salud_lugar_total_m)
+fichas,salud_lugar_centroprivado_h,"Acude a consultorio/clínica/hospital privado, hombres",salud_lugar,numerica,salud_lugar_centroprivado_h,salud_lugar_total_h
+fichas,salud_lugar_centroprivado_m,"Acude a consultorio/clínica/hospital privado, mujeres",salud_lugar,numerica,salud_lugar_centroprivado_m,salud_lugar_total_m
+fichas,salud_lugar_centropublico,Acude a puesto/centro/hospital de salud público,salud_lugar,numerica,(salud_lugar_centropublico_h + salud_lugar_centropublico_m),(salud_lugar_total_h + salud_lugar_total_m)
+fichas,salud_lugar_centropublico_h,"Acude a puesto/centro/hospital de salud público, hombres",salud_lugar,numerica,salud_lugar_centropublico_h,salud_lugar_total_h
+fichas,salud_lugar_centropublico_m,"Acude a puesto/centro/hospital de salud público, mujeres",salud_lugar,numerica,salud_lugar_centropublico_m,salud_lugar_total_m
+fichas,salud_lugar_domicilio,Acude a atención médica en domicilio,salud_lugar,numerica,(salud_lugar_domicilio_h + salud_lugar_domicilio_m),(salud_lugar_total_h + salud_lugar_total_m)
+fichas,salud_lugar_domicilio_h,"Acude a atención médica en domicilio, hombres",salud_lugar,numerica,salud_lugar_domicilio_h,salud_lugar_total_h
+fichas,salud_lugar_domicilio_m,"Acude a atención médica en domicilio, mujeres",salud_lugar,numerica,salud_lugar_domicilio_m,salud_lugar_total_m
+fichas,salud_lugar_farmacia,Acude a farmacia sin receta o se automedica,salud_lugar,numerica,(salud_lugar_farmacia_h + salud_lugar_farmacia_m),(salud_lugar_total_h + salud_lugar_total_m)
+fichas,salud_lugar_farmacia_h,"Acude a farmacia sin receta o se automedica, hombres",salud_lugar,numerica,salud_lugar_farmacia_h,salud_lugar_total_h
+fichas,salud_lugar_farmacia_m,"Acude a farmacia sin receta o se automedica, mujeres",salud_lugar,numerica,salud_lugar_farmacia_m,salud_lugar_total_m
+fichas,salud_lugar_total,Población que acude por problemas de salud,salud_lugar,numerica,(salud_lugar_total_h + salud_lugar_total_m),
+fichas,salud_lugar_total_h,"Población que acude por problemas de salud, hombres",salud_lugar,numerica,salud_lugar_total_h,
+fichas,salud_lugar_total_m,"Población que acude por problemas de salud, mujeres",salud_lugar,numerica,salud_lugar_total_m,
+fichas,salud_lugar_tradicional,Acude a médica(o) tradicional ancestral,salud_lugar,numerica,(salud_lugar_tradicional_h + salud_lugar_tradicional_m),(salud_lugar_total_h + salud_lugar_total_m)
+fichas,salud_lugar_tradicional_h,"Acude a médica(o) tradicional ancestral, hombres",salud_lugar,numerica,salud_lugar_tradicional_h,salud_lugar_total_h
+fichas,salud_lugar_tradicional_m,"Acude a médica(o) tradicional ancestral, mujeres",salud_lugar,numerica,salud_lugar_tradicional_m,salud_lugar_total_m
+fichas,salud_seguro_cajasalud,Afiliado a caja de salud,salud_seguro,numerica,(salud_seguro_cajasalud_h + salud_seguro_cajasalud_m),(salud_seguro_total_h + salud_seguro_total_m)
+fichas,salud_seguro_cajasalud_h,"Afiliado a caja de salud, hombres",salud_seguro,numerica,salud_seguro_cajasalud_h,salud_seguro_total_h
+fichas,salud_seguro_cajasalud_m,"Afiliado a caja de salud, mujeres",salud_seguro,numerica,salud_seguro_cajasalud_m,salud_seguro_total_m
+fichas,salud_seguro_ninguno,Sin seguro de salud,salud_seguro,numerica,(salud_seguro_ninguno_h + salud_seguro_ninguno_m),(salud_seguro_total_h + salud_seguro_total_m)
+fichas,salud_seguro_ninguno_h,"Sin seguro de salud, hombres",salud_seguro,numerica,salud_seguro_ninguno_h,salud_seguro_total_h
+fichas,salud_seguro_ninguno_m,"Sin seguro de salud, mujeres",salud_seguro,numerica,salud_seguro_ninguno_m,salud_seguro_total_m
+fichas,salud_seguro_ns,Seguro de salud sin especificar,salud_seguro,numerica,(salud_seguro_ns_h + salud_seguro_ns_m),(salud_seguro_total_h + salud_seguro_total_m)
+fichas,salud_seguro_ns_h,"Seguro de salud sin especificar, hombres",salud_seguro,numerica,salud_seguro_ns_h,salud_seguro_total_h
+fichas,salud_seguro_ns_m,"Seguro de salud sin especificar, mujeres",salud_seguro,numerica,salud_seguro_ns_m,salud_seguro_total_m
+fichas,salud_seguro_privado,Afiliado a seguro privado de salud,salud_seguro,numerica,(salud_seguro_privado_h + salud_seguro_privado_m),(salud_seguro_total_h + salud_seguro_total_m)
+fichas,salud_seguro_privado_h,"Afiliado a seguro privado de salud, hombres",salud_seguro,numerica,salud_seguro_privado_h,salud_seguro_total_h
+fichas,salud_seguro_privado_m,"Afiliado a seguro privado de salud, mujeres",salud_seguro,numerica,salud_seguro_privado_m,salud_seguro_total_m
+fichas,salud_seguro_sus,Registrado al SUS,salud_seguro,numerica,(salud_seguro_sus_h + salud_seguro_sus_m),(salud_seguro_total_h + salud_seguro_total_m)
+fichas,salud_seguro_sus_h,"Registrado al SUS, hombres",salud_seguro,numerica,salud_seguro_sus_h,salud_seguro_total_h
+fichas,salud_seguro_sus_m,"Registrado al SUS, mujeres",salud_seguro,numerica,salud_seguro_sus_m,salud_seguro_total_m
+fichas,salud_seguro_total,Población con registro al SUS o seguro de salud,salud_seguro,numerica,(salud_seguro_total_h + salud_seguro_total_m),
+fichas,salud_seguro_total_h,"Población con registro al SUS o seguro de salud, hombres",salud_seguro,numerica,salud_seguro_total_h,
+fichas,salud_seguro_total_m,"Población con registro al SUS o seguro de salud, mujeres",salud_seguro,numerica,salud_seguro_total_m,
+fichas,nac_aqui,Nacida aquí,nacimiento,numerica,(nac_aqui_h + nac_aqui_m),(nac_total_h + nac_total_m)
+fichas,nac_aqui_h,"Nacida aquí, hombres",nacimiento,numerica,nac_aqui_h,nac_total_h
+fichas,nac_aqui_m,"Nacida aquí, mujeres",nacimiento,numerica,nac_aqui_m,nac_total_m
+fichas,nac_ns,Lugar de nacimiento sin especificar,nacimiento,numerica,(nac_ns_h + nac_ns_m),(nac_total_h + nac_total_m)
+fichas,nac_ns_h,"Lugar de nacimiento sin especificar, hombres",nacimiento,numerica,nac_ns_h,nac_total_h
+fichas,nac_ns_m,"Lugar de nacimiento sin especificar, mujeres",nacimiento,numerica,nac_ns_m,nac_total_m
+fichas,nac_otromun,Nacida en otro municipio/TIOC del país,nacimiento,numerica,(nac_otromun_h + nac_otromun_m),(nac_total_h + nac_total_m)
+fichas,nac_otromun_h,"Nacida en otro municipio/TIOC del país, hombres",nacimiento,numerica,nac_otromun_h,nac_total_h
+fichas,nac_otromun_m,"Nacida en otro municipio/TIOC del país, mujeres",nacimiento,numerica,nac_otromun_m,nac_total_m
+fichas,nac_otropais,Nacida en otro país,nacimiento,numerica,(nac_otropais_h + nac_otropais_m),(nac_total_h + nac_total_m)
+fichas,nac_otropais_h,"Nacida en otro país, hombres",nacimiento,numerica,nac_otropais_h,nac_total_h
+fichas,nac_otropais_m,"Nacida en otro país, mujeres",nacimiento,numerica,nac_otropais_m,nac_total_m
+fichas,nac_total,Población por lugar de nacimiento,nacimiento,numerica,(nac_total_h + nac_total_m),
+fichas,nac_total_h,"Población por lugar de nacimiento, hombres",nacimiento,numerica,nac_total_h,
+fichas,nac_total_m,"Población por lugar de nacimiento, mujeres",nacimiento,numerica,nac_total_m,
+fichas,res_aqui,Reside habitualmente aquí,residencia,numerica,(res_aqui_h + res_aqui_m),(res_total_h + res_total_m)
+fichas,res_aqui_h,"Reside habitualmente aquí, hombres",residencia,numerica,res_aqui_h,res_total_h
+fichas,res_aqui_m,"Reside habitualmente aquí, mujeres",residencia,numerica,res_aqui_m,res_total_m
+fichas,res_ns,Residencia habitual sin especificar,residencia,numerica,(res_ns_h + res_ns_m),(res_total_h + res_total_m)
+fichas,res_ns_h,"Residencia habitual sin especificar, hombres",residencia,numerica,res_ns_h,res_total_h
+fichas,res_ns_m,"Residencia habitual sin especificar, mujeres",residencia,numerica,res_ns_m,res_total_m
+fichas,res_otromun,Reside en otro municipio/TIOC del país,residencia,numerica,(res_otromun_h + res_otromun_m),(res_total_h + res_total_m)
+fichas,res_otromun_h,"Reside en otro municipio/TIOC del país, hombres",residencia,numerica,res_otromun_h,res_total_h
+fichas,res_otromun_m,"Reside en otro municipio/TIOC del país, mujeres",residencia,numerica,res_otromun_m,res_total_m
+fichas,res_otropais,Reside en otro país,residencia,numerica,(res_otropais_h + res_otropais_m),(res_total_h + res_total_m)
+fichas,res_otropais_h,"Reside en otro país, hombres",residencia,numerica,res_otropais_h,res_total_h
+fichas,res_otropais_m,"Reside en otro país, mujeres",residencia,numerica,res_otropais_m,res_total_m
+fichas,res_total,Población por residencia habitual,residencia,numerica,(res_total_h + res_total_m),
+fichas,res_total_h,"Población por residencia habitual, hombres",residencia,numerica,res_total_h,
+fichas,res_total_m,"Población por residencia habitual, mujeres",residencia,numerica,res_total_m,
+fichas,ocup_cuentapropia,Trabajadora(or) por cuenta propia,ocupacion,numerica,(ocup_cuentapropia_h + ocup_cuentapropia_m),(ocup_total_h + ocup_total_m)
+fichas,ocup_cuentapropia_h,"Trabajadora(or) por cuenta propia, hombres",ocupacion,numerica,ocup_cuentapropia_h,ocup_total_h
+fichas,ocup_cuentapropia_m,"Trabajadora(or) por cuenta propia, mujeres",ocupacion,numerica,ocup_cuentapropia_m,ocup_total_m
+fichas,ocup_empleado,Empleada(o) u obrera(o),ocupacion,numerica,(ocup_empleado_h + ocup_empleado_m),(ocup_total_h + ocup_total_m)
+fichas,ocup_empleado_h,"Empleada(o) u obrera(o), hombres",ocupacion,numerica,ocup_empleado_h,ocup_total_h
+fichas,ocup_empleado_m,"Empleada(o) u obrera(o), mujeres",ocupacion,numerica,ocup_empleado_m,ocup_total_m
+fichas,ocup_ns,Categoría ocupacional sin especificar,ocupacion,numerica,(ocup_ns_h + ocup_ns_m),(ocup_total_h + ocup_total_m)
+fichas,ocup_ns_h,"Categoría ocupacional sin especificar, hombres",ocupacion,numerica,ocup_ns_h,ocup_total_h
+fichas,ocup_ns_m,"Categoría ocupacional sin especificar, mujeres",ocupacion,numerica,ocup_ns_m,ocup_total_m
+fichas,ocup_otros,Otra categoría ocupacional,ocupacion,numerica,(ocup_otros_h + ocup_otros_m),(ocup_total_h + ocup_total_m)
+fichas,ocup_otros_h,"Otra categoría ocupacional, hombres",ocupacion,numerica,ocup_otros_h,ocup_total_h
+fichas,ocup_otros_m,"Otra categoría ocupacional, mujeres",ocupacion,numerica,ocup_otros_m,ocup_total_m
+fichas,ocup_total,Población de 14 o más años por categoría ocupacional,ocupacion,numerica,(ocup_total_h + ocup_total_m),
+fichas,ocup_total_h,"Población de 14 o más años por categoría ocupacional, hombres",ocupacion,numerica,ocup_total_h,
+fichas,ocup_total_m,"Población de 14 o más años por categoría ocupacional, mujeres",ocupacion,numerica,ocup_total_m,
+fichas,act_agricultura,"Agricultura, ganadería, silvicultura y pesca",actividad,numerica,(act_agricultura_h + act_agricultura_m),(act_total_h + act_total_m)
+fichas,act_agricultura_h,"Agricultura, ganadería, silvicultura y pesca, hombres",actividad,numerica,act_agricultura_h,act_total_h
+fichas,act_agricultura_m,"Agricultura, ganadería, silvicultura y pesca, mujeres",actividad,numerica,act_agricultura_m,act_total_m
+fichas,act_alojacomida,Alojamiento y servicio de comidas,actividad,numerica,(act_alojacomida_h + act_alojacomida_m),(act_total_h + act_total_m)
+fichas,act_alojacomida_h,"Alojamiento y servicio de comidas, hombres",actividad,numerica,act_alojacomida_h,act_total_h
+fichas,act_alojacomida_m,"Alojamiento y servicio de comidas, mujeres",actividad,numerica,act_alojacomida_m,act_total_m
+fichas,act_comercio,Comercio y reparación de vehículos,actividad,numerica,(act_comercio_h + act_comercio_m),(act_total_h + act_total_m)
+fichas,act_comercio_h,"Comercio y reparación de vehículos, hombres",actividad,numerica,act_comercio_h,act_total_h
+fichas,act_comercio_m,"Comercio y reparación de vehículos, mujeres",actividad,numerica,act_comercio_m,act_total_m
+fichas,act_construccion,Construcción,actividad,numerica,(act_construccion_h + act_construccion_m),(act_total_h + act_total_m)
+fichas,act_construccion_h,"Construcción, hombres",actividad,numerica,act_construccion_h,act_total_h
+fichas,act_construccion_m,"Construcción, mujeres",actividad,numerica,act_construccion_m,act_total_m
+fichas,act_ensenanza,Enseñanza,actividad,numerica,(act_ensenanza_h + act_ensenanza_m),(act_total_h + act_total_m)
+fichas,act_ensenanza_h,"Enseñanza, hombres",actividad,numerica,act_ensenanza_h,act_total_h
+fichas,act_ensenanza_m,"Enseñanza, mujeres",actividad,numerica,act_ensenanza_m,act_total_m
+fichas,act_manufactura,Industria manufacturera,actividad,numerica,(act_manufactura_h + act_manufactura_m),(act_total_h + act_total_m)
+fichas,act_manufactura_h,"Industria manufacturera, hombres",actividad,numerica,act_manufactura_h,act_total_h
+fichas,act_manufactura_m,"Industria manufacturera, mujeres",actividad,numerica,act_manufactura_m,act_total_m
+fichas,act_ns,Actividad económica sin especificar,actividad,numerica,(act_ns_h + act_ns_m),(act_total_h + act_total_m)
+fichas,act_ns_h,"Actividad económica sin especificar, hombres",actividad,numerica,act_ns_h,act_total_h
+fichas,act_ns_m,"Actividad económica sin especificar, mujeres",actividad,numerica,act_ns_m,act_total_m
+fichas,act_otras,Otras actividades económicas,actividad,numerica,(act_otras_h + act_otras_m),(act_total_h + act_total_m)
+fichas,act_otras_h,"Otras actividades económicas, hombres",actividad,numerica,act_otras_h,act_total_h
+fichas,act_otras_m,"Otras actividades económicas, mujeres",actividad,numerica,act_otras_m,act_total_m
+fichas,act_salud,Salud humana y asistencia social,actividad,numerica,(act_salud_h + act_salud_m),(act_total_h + act_total_m)
+fichas,act_salud_h,"Salud humana y asistencia social, hombres",actividad,numerica,act_salud_h,act_total_h
+fichas,act_salud_m,"Salud humana y asistencia social, mujeres",actividad,numerica,act_salud_m,act_total_m
+fichas,act_total,Población de 14 o más años por actividad económica,actividad,numerica,(act_total_h + act_total_m),
+fichas,act_total_h,"Población de 14 o más años por actividad económica, hombres",actividad,numerica,act_total_h,
+fichas,act_total_m,"Población de 14 o más años por actividad económica, mujeres",actividad,numerica,act_total_m,
+fichas,act_transporte,Transporte y almacenamiento,actividad,numerica,(act_transporte_h + act_transporte_m),(act_total_h + act_total_m)
+fichas,act_transporte_h,"Transporte y almacenamiento, hombres",actividad,numerica,act_transporte_h,act_total_h
+fichas,act_transporte_m,"Transporte y almacenamiento, mujeres",actividad,numerica,act_transporte_m,act_total_m
+fichas,viv_tenencia_alquilada,Vivienda alquilada,vivienda,numerica,viv_tenencia_alquilada,viv_tenencia_total
+fichas,viv_tenencia_anticretico,Vivienda en anticrético o contrato mixto,vivienda,numerica,viv_tenencia_anticretico,viv_tenencia_total
+fichas,viv_tenencia_otra,Vivienda con otra tenencia,vivienda,numerica,viv_tenencia_otra,viv_tenencia_total
+fichas,viv_tenencia_prestada,Vivienda cedida o prestada,vivienda,numerica,viv_tenencia_prestada,viv_tenencia_total
+fichas,viv_tenencia_propia,Vivienda propia,vivienda,numerica,viv_tenencia_propia,viv_tenencia_total
+fichas,viv_tenencia_total,Viviendas ocupadas por tenencia,vivienda,numerica,viv_tenencia_total,
+fichas,viv_tipo_ausentes,Viviendas con personas temporalmente ausentes,vivienda,numerica,viv_tipo_ausentes,viv_total
+fichas,viv_tipo_colectiva,Viviendas colectivas,vivienda,numerica,viv_tipo_colectiva,viv_total
+fichas,viv_tipo_desocupada,Viviendas particulares desocupadas,vivienda,numerica,viv_tipo_desocupada,viv_total
+fichas,viv_tipo_particular,Viviendas particulares,vivienda,numerica,viv_tipo_particular,viv_total
+fichas,viv_tipo_presentes,Viviendas particulares con personas presentes,vivienda,numerica,viv_tipo_presentes,viv_total
+fichas,viv_total,Total de viviendas,vivienda,numerica,viv_total,
+fichas,serv_agua_caneria,Agua por cañería de red,servicios,numerica,serv_agua_caneria,serv_agua_total
+fichas,serv_agua_carro,Agua de carro repartidor,servicios,numerica,serv_agua_carro,serv_agua_total
+fichas,serv_agua_lluvia,Agua de cosecha de lluvia,servicios,numerica,serv_agua_lluvia,serv_agua_total
+fichas,serv_agua_otra,Agua de otra procedencia,servicios,numerica,serv_agua_otra,serv_agua_total
+fichas,serv_agua_pileta,Agua de pileta pública,servicios,numerica,serv_agua_pileta,serv_agua_total
+fichas,serv_agua_pozobomba,Agua de pozo con bomba,servicios,numerica,serv_agua_pozobomba,serv_agua_total
+fichas,serv_agua_pozosinbomba,Agua de pozo sin bomba o no protegido,servicios,numerica,serv_agua_pozosinbomba,serv_agua_total
+fichas,serv_agua_total,Viviendas ocupadas por procedencia del agua,servicios,numerica,serv_agua_total,
+fichas,serv_agua_vertienteno,"Agua de río, acequia o vertiente no protegida",servicios,numerica,serv_agua_vertienteno,serv_agua_total
+fichas,serv_agua_vertientesi,Agua de manantial o vertiente protegida,servicios,numerica,serv_agua_vertientesi,serv_agua_total
+fichas,serv_basura_basurero,Basura en contenedor o basurero público,servicios,numerica,serv_basura_basurero,serv_basura_total
+fichas,serv_basura_calle,Basura en terreno baldío o la calle,servicios,numerica,serv_basura_calle,serv_basura_total
+fichas,serv_basura_carro,Basura al carro basurero,servicios,numerica,serv_basura_carro,serv_basura_total
+fichas,serv_basura_entierra,Basura enterrada,servicios,numerica,serv_basura_entierra,serv_basura_total
+fichas,serv_basura_otro,Basura eliminada de otra forma,servicios,numerica,serv_basura_otro,serv_basura_total
+fichas,serv_basura_quema,Basura quemada,servicios,numerica,serv_basura_quema,serv_basura_total
+fichas,serv_basura_rio,Basura al río,servicios,numerica,serv_basura_rio,serv_basura_total
+fichas,serv_basura_total,Viviendas ocupadas por eliminación de la basura,servicios,numerica,serv_basura_total,
+fichas,serv_combustible_electricidad,Cocina con electricidad,servicios,numerica,serv_combustible_electricidad,serv_combustible_total
+fichas,serv_combustible_gascaneria,Cocina con gas por cañería,servicios,numerica,serv_combustible_gascaneria,serv_combustible_total
+fichas,serv_combustible_gasgarrafa,Cocina con gas en garrafa,servicios,numerica,serv_combustible_gasgarrafa,serv_combustible_total
+fichas,serv_combustible_guano,"Cocina con guano, bosta o taquia",servicios,numerica,serv_combustible_guano,serv_combustible_total
+fichas,serv_combustible_lena,Cocina con leña,servicios,numerica,serv_combustible_lena,serv_combustible_total
+fichas,serv_combustible_nococina,No cocina,servicios,numerica,serv_combustible_nococina,serv_combustible_total
+fichas,serv_combustible_otro,Cocina con otro combustible,servicios,numerica,serv_combustible_otro,serv_combustible_total
+fichas,serv_combustible_solar,Cocina con energía solar,servicios,numerica,serv_combustible_solar,serv_combustible_total
+fichas,serv_combustible_total,Viviendas ocupadas por combustible para cocinar,servicios,numerica,serv_combustible_total,
+fichas,serv_desague_alcantarillado,Desagüe a la red de alcantarillado,servicios,numerica,serv_desague_alcantarillado,serv_desague_total
+fichas,serv_desague_camara,Desagüe a cámara séptica,servicios,numerica,serv_desague_camara,serv_desague_total
+fichas,serv_desague_ecologico,Baño ecológico,servicios,numerica,serv_desague_ecologico,serv_desague_total
+fichas,serv_desague_ninguno,Sin servicio sanitario,servicios,numerica,serv_desague_ninguno,serv_desague_total
+fichas,serv_desague_pozoabsorcion,Desagüe a pozo de absorción,servicios,numerica,serv_desague_pozoabsorcion,serv_desague_total
+fichas,serv_desague_pozociego,Desagüe a pozo ciego,servicios,numerica,serv_desague_pozociego,serv_desague_total
+fichas,serv_desague_superficie,Desagüe a la superficie,servicios,numerica,serv_desague_superficie,serv_desague_total
+fichas,serv_desague_total,Viviendas ocupadas por desagüe del servicio sanitario,servicios,numerica,serv_desague_total,
+fichas,serv_luz_motor,Energía eléctrica de motor propio,servicios,numerica,serv_luz_motor,serv_luz_total
+fichas,serv_luz_ninguna,Sin energía eléctrica,servicios,numerica,serv_luz_ninguna,serv_luz_total
+fichas,serv_luz_otra,Energía eléctrica de otra fuente,servicios,numerica,serv_luz_otra,serv_luz_total
+fichas,serv_luz_publica,Energía eléctrica de servicio público,servicios,numerica,serv_luz_publica,serv_luz_total
+fichas,serv_luz_solar,Energía eléctrica de panel solar,servicios,numerica,serv_luz_solar,serv_luz_total
+fichas,serv_luz_total,Viviendas ocupadas por disponibilidad de energía eléctrica,servicios,numerica,serv_luz_total,
+fichas,tic_celular,Hogares con teléfono celular,tic,numerica,tic_celular,tic_total
+fichas,tic_internet,Hogares con internet fijo o móvil,tic,numerica,tic_internet,tic_total
+fichas,tic_radio,Hogares con radio o equipo de sonido,tic,numerica,tic_radio,tic_total
+fichas,tic_total,Hogares por tenencia de TIC,tic,numerica,tic_total,
+fichas,tic_tv,Hogares con televisor,tic,numerica,tic_tv,tic_total
+fichas,mat_pared_adobe,Paredes de adobe o tapial,material,numerica,mat_pared_adobe,viv_tipo_presentes
+fichas,mat_pared_cana,"Paredes de caña, palma o tronco",material,numerica,mat_pared_cana,viv_tipo_presentes
+fichas,mat_pared_ladrillo,"Paredes de ladrillo, bloque de cemento u hormigón",material,numerica,mat_pared_ladrillo,viv_tipo_presentes
+fichas,mat_pared_madera,Paredes de madera,material,numerica,mat_pared_madera,viv_tipo_presentes
+fichas,mat_pared_otro,Paredes de otro material,material,numerica,mat_pared_otro,viv_tipo_presentes
+fichas,mat_pared_piedra,Paredes de piedra,material,numerica,mat_pared_piedra,viv_tipo_presentes
+fichas,mat_pared_tabique,Paredes de tabique o quinche,material,numerica,mat_pared_tabique,viv_tipo_presentes
+fichas,mat_piso_cemento,Piso de cemento,material,numerica,mat_piso_cemento,viv_tipo_presentes
+fichas,mat_piso_ceramica,Piso de cerámica o porcelanato,material,numerica,mat_piso_ceramica,viv_tipo_presentes
+fichas,mat_piso_flotante,Piso flotante,material,numerica,mat_piso_flotante,viv_tipo_presentes
+fichas,mat_piso_ladrillo,Piso de ladrillo,material,numerica,mat_piso_ladrillo,viv_tipo_presentes
+fichas,mat_piso_machimbre,Piso de machimbre o parquet,material,numerica,mat_piso_machimbre,viv_tipo_presentes
+fichas,mat_piso_madera,Piso de tablón de madera,material,numerica,mat_piso_madera,viv_tipo_presentes
+fichas,mat_piso_mosaico,Piso de mosaico o baldosa,material,numerica,mat_piso_mosaico,viv_tipo_presentes
+fichas,mat_piso_otro,Piso de otro material,material,numerica,mat_piso_otro,viv_tipo_presentes
+fichas,mat_piso_tierra,Piso de tierra,material,numerica,mat_piso_tierra,viv_tipo_presentes
+fichas,mat_revoque_con,Vivienda con revoque en las paredes,material,numerica,mat_revoque_con,viv_tipo_presentes
+fichas,mat_revoque_sin,Vivienda sin revoque en las paredes,material,numerica,mat_revoque_sin,viv_tipo_presentes
+fichas,mat_techo_calamina,Techo de calamina o plancha metálica,material,numerica,mat_techo_calamina,viv_tipo_presentes
+fichas,mat_techo_losa,Techo de losa de hormigón armado,material,numerica,mat_techo_losa,viv_tipo_presentes
+fichas,mat_techo_otro,Techo de otro material,material,numerica,mat_techo_otro,viv_tipo_presentes
+fichas,mat_techo_paja,"Techo de paja, palma, caña o barro",material,numerica,mat_techo_paja,viv_tipo_presentes
+fichas,mat_techo_teja,"Techo de teja de arcilla, cemento o fibrocemento",material,numerica,mat_techo_teja,viv_tipo_presentes
+fichas,hac_alto,Viviendas con hacinamiento alto (más de 3 por dormitorio o sin dormitorio),hacinamiento,numerica,hac_alto,viv_tipo_presentes
+fichas,hac_medio,Viviendas con hacinamiento medio (más de 2 y hasta 3 por dormitorio),hacinamiento,numerica,hac_medio,viv_tipo_presentes
+fichas,hac_sin,Viviendas sin hacinamiento (hasta 2 personas por dormitorio),hacinamiento,numerica,hac_sin,viv_tipo_presentes
+fichas,hogar_compuesto,Hogares compuestos,hogar,numerica,hogar_compuesto,viv_tipo_presentes
+fichas,hogar_extendido,Hogares extendidos,hogar,numerica,hogar_extendido,viv_tipo_presentes
+fichas,hogar_monoparental,Hogares monoparentales,hogar,numerica,hogar_monoparental,viv_tipo_presentes
+fichas,hogar_nuclear,Hogares nucleares completos,hogar,numerica,hogar_nuclear,viv_tipo_presentes
+fichas,hogar_otro,Hogares de otro tipo,hogar,numerica,hogar_otro,viv_tipo_presentes
+fichas,hogar_pareja,Hogares de pareja nuclear,hogar,numerica,hogar_pareja,viv_tipo_presentes
+fichas,hogar_sinjefe,Hogares sin jefe de hogar,hogar,numerica,hogar_sinjefe,viv_tipo_presentes
+fichas,hogar_unipersonal,Hogares unipersonales,hogar,numerica,hogar_unipersonal,viv_tipo_presentes
+unidades,ficha,Unidades con ficha de indicadores liberada,unidad,numerica,CASE WHEN ficha THEN 1 ELSE 0 END,1
+unidades,personas,Personas empadronadas en la unidad,unidad,numerica,personas,
+unidades,viviendas,Viviendas empadronadas en la unidad,unidad,numerica,viviendas,

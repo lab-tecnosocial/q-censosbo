@@ -13,14 +13,17 @@ sin tener que descargar archivos pesados.
   usando DuckDB; una agregación transfiere unos pocos MB en vez del archivo completo.
 - **Indicadores por departamento o municipio**: conteo, media, mediana, suma, desviación
   estándar, **moda** (categoría más frecuente) y **porcentaje de una categoría**.
+- **Manzanos y comunidades del CPV-2024**: 268.604 unidades censales con los 194 indicadores de
+  la ficha resumen del INE, para mapas intraurbanos de a un municipio.
 - **Reconoce el tipo de variable** (categórica o numérica) desde el diccionario oficial y
   muestra **etiquetas legibles** (p. ej. `1 → Quechua`) en vez de códigos.
 - **Mapas coropléticos** con leyenda apropiada y un **resumen del resultado** que indica el
-  valor nacional y la distribución entre unidades.
+  valor de referencia del territorio y la distribución entre unidades.
 
 ## Cómo funciona
 
-1. Eliges **año**, **tabla**, **nivel** (departamental/municipal) y **variable**.
+1. Eliges **año**, **tabla**, **nivel** (departamental, municipal o manzano/comunidad) y
+   **variable**.
 2. **`1 · Consultar`** calcula la agregación y muestra el resumen del resultado.
 3. **`2 · Generar mapa`** dibuja la capa en QGIS, ya estilizada.
 

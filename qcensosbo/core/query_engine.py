@@ -22,8 +22,9 @@ import sys
 import sysconfig
 
 from .data_loader import (
-    BASE_URL, RELEASES, TABLE_FILES, DEPT_CODES,
+    BASE_URL, TABLE_FILES, DEPT_CODES, release_tag,
 )
+from .fichas import AREAS
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DuckDB: detección y auto-instalación
@@ -37,6 +38,11 @@ _schema_cache = {}   # {(url, "__cols__"): {col_lower: col_real}}
 NO_MUNICIPIO_MSG = (
     "Este censo/tabla no tiene nivel municipal disponible "
     "(p. ej. el censo de 1976 usa cantón, no municipio). Usa nivel Departamental."
+)
+
+NO_UNIDAD_MSG = (
+    "El nivel de manzano/comunidad solo existe en las tablas de fichas del "
+    "CPV-2024 (no en los microdatos, cuya unidad es la persona o la vivienda)."
 )
 
 
@@ -250,7 +256,7 @@ def install_duckdb(status_cb=None, done_cb=None):
 
 def get_parquet_urls(anio, tabla, departamento=None):
     """Retorna lista de URLs remotas para (anio, tabla, departamento opcional)."""
-    tag = RELEASES[anio]
+    tag = release_tag(anio, tabla)
     if anio == 2024 and tabla == "personas":
         codes = [departamento] if departamento else DEPT_CODES
         return [f"{BASE_URL}/{tag}/persona_dep{c}.parquet" for c in codes]
@@ -294,11 +300,34 @@ def get_columns(source):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _geo_col(nivel):
+    if nivel == "unidad":
+        return "codigo"
     return "idep" if nivel == "departamento" else "imun"
 
 
 def _pad_width(nivel):
+    """Dígitos del código geográfico. 0 = no rellenar.
+
+    El código de una unidad censal es alfanumérico y no jerárquico
+    ("00255016751-A"): no se rellena ni se recorta.
+    """
+    if nivel == "unidad":
+        return 0
     return 2 if nivel == "departamento" else 6
+
+
+def pad_geo_code(df, nivel):
+    """Normaliza la columna geo_code de un DataFrame al ancho del nivel.
+
+    Los códigos de departamento y municipio se comparan como texto con ceros a
+    la izquierda (así casan con el GeoJSON), pero DuckDB puede devolverlos como
+    número si la columna de origen era entera.
+    """
+    pad = _pad_width(nivel)
+    df["geo_code"] = df["geo_code"].astype(str)
+    if pad:
+        df["geo_code"] = df["geo_code"].str.zfill(pad)
+    return df
 
 
 def _is_remote(srcs):
@@ -320,6 +349,13 @@ def _make_con(srcs=None):
     if srcs is None or _is_remote(srcs):
         try:
             con.execute("INSTALL httpfs; LOAD httpfs;")
+            # Sin timeout, una red lenta/bloqueada (proxy, firewall, GitHub
+            # inaccesible) deja la consulta colgada indefinidamente y la UI se
+            # queda en "Cargando variables…". Estos límites hacen que falle de
+            # forma visible en vez de colgarse para siempre.
+            con.execute("SET http_timeout = 30000;")        # ms por request
+            con.execute("SET http_retries = 2;")
+            con.execute("SET http_retry_wait_ms = 500;")
         except Exception:
             pass
     return con
@@ -340,31 +376,58 @@ def _close(con):
             pass
 
 
-def _filtered_from(urls, idep=None, departamento=None):
-    """Fragmento FROM parametrizado, opcionalmente filtrado por departamento.
+def _filtered_from(urls, cols, departamento=None, municipio=None, area=None):
+    """Fragmento FROM parametrizado, con los filtros geográficos que apliquen.
 
     DuckDB acepta la lista de rutas/URLs como un único parámetro de
     `read_parquet(?)`, así NO interpolamos rutas en el texto SQL: el driver las
     trata como valor enlazado. Esto evita escapes manuales y los problemas con
     los backslashes de Windows en cualquier plataforma.
 
-    Si se pide un `departamento` y el archivo tiene columna `idep` (no está ya
-    particionado por depto), envuelve la fuente en una subconsulta que filtra por
-    ese departamento. Así, a nivel municipal, la agregación y el valor de
-    referencia se restringen al departamento elegido en vez de a todo el país.
+    Filtros posibles (todos opcionales, se combinan con AND):
+      - `departamento` ("01"…"09") — restringe la agregación y el valor de
+        referencia al departamento elegido en vez de a todo el país.
+      - `municipio` (código nacional de 6 dígitos) — necesario para el nivel de
+        manzano/comunidad, donde el país entero son 268.604 unidades.
+      - `area` ("urbana" | "rural") — solo en las tablas de fichas.
+
+    Los códigos se comparan como enteros (TRY_CAST) porque unas tablas los
+    guardan con ceros a la izquierda y otras como número.
 
     Retorna (fragmento_sql, params) para pasar a `con.execute(sql, params)`.
     """
-    if departamento and idep:
+    idep  = _pick_col(cols, _GEO_CANDIDATES["departamento"])
+    iprov = _pick_col(cols, _GEO_CANDIDATES["provincia"])
+    imun  = _pick_col(cols, _GEO_CANDIDATES["municipio"])
+
+    conds, params = [], []
+
+    if municipio:
+        code = str(municipio).zfill(6)
+        partes = ((idep, code[:2]), (iprov, code[2:4]), (imun, code[4:6]))
+        if not all(col for col, _ in partes):
+            raise ValueError(NO_MUNICIPIO_MSG)
+        for col, val in partes:
+            conds.append(f"TRY_CAST({col} AS INTEGER) = ?")
+            params.append(int(val))
+    elif departamento and idep:
         try:
-            dep_int = int(str(departamento))
+            conds.append(f"TRY_CAST({idep} AS INTEGER) = ?")
+            params.append(int(str(departamento)))
         except (ValueError, TypeError):
-            dep_int = None
-        if dep_int is not None:
-            return (f"(SELECT * FROM read_parquet(?) "
-                    f"WHERE TRY_CAST({idep} AS INTEGER) = ?) AS _src",
-                    [list(urls), dep_int])
-    return "read_parquet(?)", [list(urls)]
+            conds.pop()
+
+    if area:
+        col_area = _pick_col(cols, ["area"])
+        cod_area = AREAS.get(str(area).lower())
+        if col_area and cod_area:
+            conds.append(f"TRY_CAST({col_area} AS INTEGER) = ?")
+            params.append(cod_area)
+
+    if not conds:
+        return "read_parquet(?)", [list(urls)]
+    return (f"(SELECT * FROM read_parquet(?) WHERE {' AND '.join(conds)}) AS _src",
+            [list(urls)] + params)
 
 
 def _is_dept_partitioned(urls):
@@ -413,23 +476,30 @@ def _detect_geo_col(con, url, nivel):
     return _pick_col(cols, _GEO_CANDIDATES.get(nivel, [])) or _geo_col(nivel)
 
 
-def _build_geo_parts(con, urls, nivel, departamento=None):
+def _build_geo_parts(con, urls, nivel, departamento=None, municipio=None, area=None):
     """
     Retorna (src_clause, geo_select_sql, group_col, params). `src_clause` lleva
     placeholder(s) `?` y `params` los valores correspondientes (ver _filtered_from).
 
     Camino preferido (todos los censos ya traen geografía en la tabla): construye
     el código a partir de las columnas reales — departamento = idep(2);
-    municipio = idep(2)+iprov(2)+imun(2), igual que el GeoJSON.
+    municipio = idep(2)+iprov(2)+imun(2), igual que el GeoJSON; unidad = el
+    `codigo` de la ficha, que ya identifica el manzano o la comunidad.
 
     Fallback: archivos 2024 particionados que aún no tengan columna idep → extrae
     el departamento del nombre de archivo virtual de DuckDB.
 
-    Si se pide `departamento` (solo aplica a nivel municipal), la fuente se filtra
-    a ese departamento vía _filtered_from.
+    Los filtros (`departamento`, `municipio`, `area`) se aplican vía _filtered_from.
     """
     cols = _describe_cols(con, urls[0])
     idep = _pick_col(cols, _GEO_CANDIDATES["departamento"])
+
+    if nivel == "unidad":
+        codigo = _pick_col(cols, ["codigo", "cod_unidad", "id_unidad"])
+        if not codigo:
+            raise ValueError(NO_UNIDAD_MSG)
+        src, params = _filtered_from(urls, cols, departamento, municipio, area)
+        return src, f"CAST({codigo} AS VARCHAR) AS geo_code", "geo_code", params
 
     # Fallback para archivos particionados sin columna idep (ya vienen filtrados
     # por departamento desde get_parquet_urls, así que no re-filtramos aquí).
@@ -445,7 +515,7 @@ def _build_geo_parts(con, urls, nivel, departamento=None):
                       f"LPAD(CAST({imun} AS VARCHAR), 2, '0')) AS geo_code")
         return src, geo_select, "geo_code", params
 
-    src, params = _filtered_from(urls, idep, departamento)
+    src, params = _filtered_from(urls, cols, departamento, municipio, area)
 
     if nivel == "departamento":
         geo = idep or _geo_col("departamento")
@@ -479,18 +549,19 @@ def _cat_filter_sql(var_expr, category):
 
 
 def aggregate_geo(urls, nivel, variable="__count__", agg="__count__",
-                  category=None, departamento=None):
+                  category=None, departamento=None, municipio=None, area=None):
     """
     Agrega datos por unidad geográfica con DuckDB. `urls` pueden ser URLs
     remotas o rutas locales: read_parquet acepta ambas indistintamente.
 
     Maneja tanto archivos históricos (con columna idep/imun) como archivos
     particionados del 2024 (sin columna idep, geo extraído del nombre de archivo).
-    Si se pasa `departamento` (nivel municipal), restringe la agregación a ese
-    departamento. Retorna DataFrame [geo_code, valor].
+    `departamento`, `municipio` y `area` restringen el territorio agregado.
+    Retorna DataFrame [geo_code, valor].
     """
     con = _make_con(urls)
-    src, geo_select, group, params = _build_geo_parts(con, urls, nivel, departamento)
+    src, geo_select, group, params = _build_geo_parts(
+        con, urls, nivel, departamento, municipio, area)
 
     if agg == "__count__":
         if category is not None:
@@ -552,8 +623,7 @@ def aggregate_geo(urls, nivel, variable="__count__", agg="__count__",
         df = con.execute(sql, params).df()
     finally:
         _close(con)
-    df["geo_code"] = df["geo_code"].astype(str).str.zfill(_pad_width(nivel))
-    return df
+    return pad_geo_code(df, nivel)
 
 
 def _national_value_sql(variable, agg, category):
@@ -580,19 +650,39 @@ def _national_value_sql(variable, agg, category):
 
 
 def aggregate_national(urls, variable="__count__", agg="__count__",
-                       category=None, departamento=None):
+                       category=None, departamento=None, municipio=None,
+                       area=None):
     """Valor de referencia (un escalar, sin desagregar por geografía) vía DuckDB.
 
-    `urls` pueden ser URLs remotas o rutas locales. Si se pasa `departamento`,
-    el escalar se calcula solo sobre ese departamento (referencia departamental
-    en vez de nacional)."""
+    `urls` pueden ser URLs remotas o rutas locales. Los filtros geográficos
+    acotan la referencia al territorio elegido (departamental o municipal en vez
+    de nacional)."""
     con = _make_con(urls)
-    idep = _pick_col(_describe_cols(con, urls[0]), _GEO_CANDIDATES["departamento"])
-    src, params = _filtered_from(urls, idep, departamento)
+    cols = _describe_cols(con, urls[0])
+    src, params = _filtered_from(urls, cols, departamento, municipio, area)
     expr = _national_value_sql(variable, agg, category)
     where = "" if agg in ("__count__", "pct_category") else f" WHERE {variable} IS NOT NULL"
     try:
         row = con.execute(f"SELECT {expr} AS v FROM {src}{where}", params).fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None
+    finally:
+        _close(con)
+
+
+def national_custom_sql(urls, sql_expr, departamento=None, municipio=None,
+                        area=None):
+    """Igual que aggregate_national, pero con una expresión agregada libre.
+
+    Es la referencia de las fichas (cuyo indicador ya viene como expresión) y del
+    modo SQL avanzado: el mismo cálculo sin GROUP BY, sobre todo el territorio.
+    """
+    con = _make_con(urls)
+    cols = _describe_cols(con, urls[0])
+    src, params = _filtered_from(urls, cols, departamento, municipio, area)
+    try:
+        row = con.execute(f"SELECT ({sql_expr}) AS v FROM {src}", params).fetchone()
         return row[0] if row else None
     except Exception:
         return None
@@ -637,20 +727,25 @@ def normalize_code(s):
 # Custom SQL expression
 # ─────────────────────────────────────────────────────────────────────────────
 
-def aggregate_custom_sql(urls, nivel, sql_expr, departamento=None):
+def aggregate_custom_sql(urls, nivel, sql_expr, departamento=None,
+                         municipio=None, area=None):
     """
-    Agrega datos con una expresión SQL libre del usuario.
+    Agrega datos con una expresión SQL libre.
 
     sql_expr es solo la fórmula para el campo 'valor', por ejemplo:
         "AVG(p26_edad)"
         "100.0 * SUM(CASE WHEN p25_sexo = 1 THEN 1 END) / COUNT(*)"
+
+    La usa tanto el modo SQL avanzado del panel como los indicadores de ficha,
+    que se declaran en `fichas.py` justamente como expresión agregada.
 
     El plugin envuelve la expresión con el GROUP BY geográfico.
     `urls` pueden ser URLs remotas o rutas locales.
     Retorna DataFrame [geo_code, valor].
     """
     con = _make_con(urls)
-    src, geo_select, group, params = _build_geo_parts(con, urls, nivel, departamento)
+    src, geo_select, group, params = _build_geo_parts(
+        con, urls, nivel, departamento, municipio, area)
 
     sql = f"""
         SELECT {geo_select},
@@ -662,8 +757,7 @@ def aggregate_custom_sql(urls, nivel, sql_expr, departamento=None):
         df = con.execute(sql, params).df()
     finally:
         _close(con)
-    df["geo_code"] = df["geo_code"].astype(str).str.zfill(_pad_width(nivel))
-    return df
+    return pad_geo_code(df, nivel)
 
 
 def cleanup():

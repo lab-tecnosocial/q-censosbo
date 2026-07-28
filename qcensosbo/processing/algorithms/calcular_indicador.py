@@ -63,14 +63,17 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return (
-            "Agrega microdatos de los Censos de Bolivia (1976–2024) por unidad geográfica "
-            "y genera una capa vectorial con simbología graduada.\n\n"
+            "Agrega microdatos de los Censos de Bolivia (1976–2024) por departamento "
+            "o municipio y genera una capa vectorial con el campo valor_censo.\n\n"
             "Parámetros principales:\n"
             "• Año / Tabla / Nivel geográfico\n"
             "• Variable y tipo de agregación (conteo, media, suma, % categoría)\n"
             "• Expresión SQL (opcional): fórmula DuckDB libre, ej. AVG(p26_edad)\n\n"
             "Si se escribe una Expresión SQL, los campos Variable y Agregación se ignoran. "
-            "La expresión SQL requiere DuckDB (se instala automáticamente al abrir el plugin)."
+            "La expresión SQL requiere DuckDB (se instala automáticamente al abrir el plugin).\n\n"
+            "La capa sale sin simbología: aplícala en QGIS, o usa el panel del "
+            "plugin, que sí la aplica. Para el nivel de manzano y comunidad del "
+            "CPV-2024, usa «Indicador por manzano/comunidad»."
         )
 
     def createInstance(self):

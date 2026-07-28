@@ -28,48 +28,61 @@ TABLA_ENTIDADES = {
 }
 
 
+def _con_nombres(df, nivel):
+    """Añade la columna geo_nombre según el nivel geográfico.
+
+    A nivel de manzano/comunidad el nombre no es único ni identifica la unidad
+    (varios manzanos comparten el nombre de la zona), así que el resumen usa el
+    propio código; el nombre legible lo pone la capa desde el parquet de
+    geometrías.
+    """
+    if nivel == "departamento":
+        df["geo_nombre"] = df["geo_code"].map(DEPT_NAMES).fillna(df["geo_code"])
+    elif nivel == "municipio":
+        from .layer_builder import geo_nombres
+        nombres = geo_nombres("municipio")
+        df["geo_nombre"] = df["geo_code"].map(nombres).fillna(df["geo_code"])
+    else:
+        df["geo_nombre"] = df["geo_code"]
+    return df[["geo_code", "geo_nombre", "valor"]]
+
+
 def agregar_datos(paths_or_urls, nivel, variable="__count__",
                   agg="__count__", category=None, remote=False,
-                  departamento=None):
+                  departamento=None, municipio=None, area=None):
     """
     Agrega datos censales por unidad geográfica.
 
     - paths_or_urls: list[str]
-    - nivel: "departamento" | "municipio"
+    - nivel: "departamento" | "municipio" | "unidad" (manzano/comunidad)
     - variable: nombre de columna o "__count__"
     - agg: "__count__" | "mean" | "sum" | "pct_category"
     - category: valor de categoría (str) cuando agg="pct_category"
     - remote: ignorado (DuckDB lee local y remoto igual); se conserva por compat.
     - departamento: código "01"…"09" para filtrar la agregación a ese
       departamento (solo aplica a nivel municipal).
+    - municipio: código nacional de 6 dígitos (obligatorio a nivel unidad).
+    - area: "urbana" | "rural" (solo tablas de fichas).
 
     Retorna DataFrame [geo_code, geo_nombre, valor].
     """
-    from .query_engine import aggregate_geo
+    from .query_engine import aggregate_geo, pad_geo_code
 
-    df = aggregate_geo(paths_or_urls, nivel, variable, agg, category, departamento)
-
-    pad = 2 if nivel == "departamento" else 6
-    df["geo_code"] = df["geo_code"].astype(str).str.zfill(pad)
-
-    if nivel == "departamento":
-        df["geo_nombre"] = df["geo_code"].map(DEPT_NAMES).fillna(df["geo_code"])
-    else:
-        from .layer_builder import geo_nombres
-        nombres = geo_nombres("municipio")
-        df["geo_nombre"] = df["geo_code"].map(nombres).fillna(df["geo_code"])
-
-    return df[["geo_code", "geo_nombre", "valor"]]
+    df = aggregate_geo(paths_or_urls, nivel, variable, agg, category,
+                       departamento, municipio, area)
+    return _con_nombres(pad_geo_code(df, nivel), nivel)
 
 
 def resumen_nacional(paths_or_urls, variable="__count__", agg="__count__",
-                     category=None, remote=False, departamento=None):
+                     category=None, remote=False, departamento=None,
+                     municipio=None, area=None):
     """Valor de referencia (un escalar) del indicador, sin desagregar por geografía.
 
-    `remote` se ignora (DuckDB lee local y remoto igual). Si se pasa
-    `departamento`, el escalar es del departamento (referencia departamental)."""
+    `remote` se ignora (DuckDB lee local y remoto igual). Los filtros geográficos
+    acotan la referencia al territorio elegido (departamental o municipal)."""
     from .query_engine import aggregate_national
-    return aggregate_national(paths_or_urls, variable, agg, category, departamento)
+    return aggregate_national(paths_or_urls, variable, agg, category,
+                              departamento, municipio, area)
 
 
 def get_columns(path_or_url, remote=False):
@@ -83,6 +96,9 @@ def _load_var_dict(anio, tabla=None):
     Lee diccionario_variables.parquet una sola vez y retorna
     {variable: {"label": str, "tipo": str|None}}, filtrado por tabla.
 
+    Las tablas de fichas (manzano/comunidad) no tienen diccionario en el release:
+    su catálogo viene empaquetado con el plugin (ver `fichas.py`).
+
     Cachea en memoria por (anio, tabla). NUNCA cachea cuando DuckDB no está
     disponible todavía (se instala en segundo plano): cachear {} ahí dejaría
     las descripciones vacías toda la sesión aunque el motor termine de instalar.
@@ -93,6 +109,13 @@ def _load_var_dict(anio, tabla=None):
     cache_key = (anio, tabla)
     if cache_key in _var_dict_cache:
         return _var_dict_cache[cache_key]
+
+    from .fichas import TABLAS as TABLAS_FICHAS, catalogo
+    if tabla in TABLAS_FICHAS:
+        result = {r["variable"]: {"label": r["etiqueta"], "tipo": r["tipo"]}
+                  for r in catalogo(tabla)}
+        _var_dict_cache[cache_key] = result
+        return result
 
     from .data_loader import download_codebook
     from .query_engine import read_parquet_local_df
@@ -159,6 +182,17 @@ def get_value_labels(anio, variable, tabla=None):
     if cache_key in _val_labels_cache:
         return _val_labels_cache[cache_key]
 
+    from .fichas import TABLAS as TABLAS_FICHAS
+    if tabla in TABLAS_FICHAS:
+        # Los indicadores de ficha son conteos, no categorías. Las dos columnas
+        # con dominio propio se resuelven aquí, sin descargar nada.
+        result = {
+            "area":  {"1": "Urbana", "2": "Rural"},
+            "ficha": {"true": "Con ficha", "false": "Sin ficha"},
+        }.get(variable, {})
+        _val_labels_cache[cache_key] = result
+        return result
+
     from .data_loader import download_labels_codebook
     from .query_engine import read_parquet_local_df
 
@@ -196,31 +230,32 @@ def get_value_labels(anio, variable, tabla=None):
         return {}
 
 
-def agregar_expresion(paths_or_urls, nivel, sql_expr, departamento=None):
+def agregar_expresion(paths_or_urls, nivel, sql_expr, departamento=None,
+                      municipio=None, area=None):
     """
-    Agrega datos con una expresión SQL personalizada del usuario.
-    Requiere DuckDB (consulta remota o local vía HTTP).
+    Agrega datos con una expresión SQL agregada.
+
+    La usan el modo SQL avanzado del panel y los indicadores de ficha (que se
+    declaran como expresión en `fichas.py`). Requiere DuckDB.
     """
-    from .query_engine import aggregate_custom_sql, duckdb_available
+    from .query_engine import aggregate_custom_sql, duckdb_available, pad_geo_code
 
     if not duckdb_available():
         raise RuntimeError(
             "La expresión SQL personalizada requiere DuckDB.\n"
             "Espera a que termine la instalación automática."
         )
-    df = aggregate_custom_sql(paths_or_urls, nivel, sql_expr, departamento)
+    df = aggregate_custom_sql(paths_or_urls, nivel, sql_expr, departamento,
+                              municipio, area)
+    return _con_nombres(pad_geo_code(df, nivel), nivel)
 
-    pad = 2 if nivel == "departamento" else 6
-    df["geo_code"] = df["geo_code"].astype(str).str.zfill(pad)
 
-    if nivel == "departamento":
-        df["geo_nombre"] = df["geo_code"].map(DEPT_NAMES).fillna(df["geo_code"])
-    else:
-        from .layer_builder import geo_nombres
-        nombres = geo_nombres("municipio")
-        df["geo_nombre"] = df["geo_code"].map(nombres).fillna(df["geo_code"])
-
-    return df[["geo_code", "geo_nombre", "valor"]]
+def resumen_expresion(paths_or_urls, sql_expr, departamento=None,
+                      municipio=None, area=None):
+    """Valor de referencia de una expresión agregada, sin desagregar por geografía."""
+    from .query_engine import national_custom_sql
+    return national_custom_sql(paths_or_urls, sql_expr, departamento,
+                               municipio, area)
 
 
 def _find_col(df, candidates):

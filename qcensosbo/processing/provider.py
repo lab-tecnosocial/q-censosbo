@@ -17,4 +17,6 @@ class CensosBoProvider(QgsProcessingProvider):
 
     def loadAlgorithms(self):
         from .algorithms.calcular_indicador import CalcularIndicadorAlgorithm
+        from .algorithms.indicador_manzanos import IndicadorManzanosAlgorithm
         self.addAlgorithm(CalcularIndicadorAlgorithm())
+        self.addAlgorithm(IndicadorManzanosAlgorithm())
