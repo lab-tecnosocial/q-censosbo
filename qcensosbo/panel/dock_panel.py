@@ -81,6 +81,7 @@ def fmt_num(x, decimales=2, pct=False):
     entero = entero.replace(",", ".")
     return f"{entero},{dec}" if dec else entero
 
+
 DEPTOS = [
     ("Todos los departamentos", None),
     ("Chuquisaca (01)", "01"), ("La Paz (02)", "02"),
@@ -913,7 +914,7 @@ class CensosBOPanel(QDockWidget):
         es el nivel de esos datos.
         """
         aplicables = self._niveles_aplicables()
-        etiquetas = dict((k, l) for l, k in NIVELES)
+        etiquetas = {key: lbl for lbl, key in NIVELES}
         prev = self.combo_nivel.currentData()
 
         self.combo_nivel.blockSignals(True)
@@ -1935,9 +1936,9 @@ class CensosBOPanel(QDockWidget):
 
         self._set_generar_busy(False)
         try:
-            capas = crear_capa_unidades(df, geoms, self._nombre_capa(ctx),
-                                        self.iface, clasificacion=clasificacion,
-                                        municipio=ctx["municipio"])
+            crear_capa_unidades(df, geoms, self._nombre_capa(ctx),
+                                self.iface, clasificacion=clasificacion,
+                                municipio=ctx["municipio"])
             total_geom = sum(len(v) for v in geoms.values())
             con_dato = set(df["geo_code"].astype(str))
             sin_dato = sum(1 for lista in geoms.values()

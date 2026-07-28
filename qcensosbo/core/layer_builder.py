@@ -133,7 +133,7 @@ def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
         )
 
     # Construir lookup: geo_code → valor
-    lookup  = {str(r["geo_code"]): r["valor"]      for _, r in df_agregado.iterrows()}
+    lookup = {str(r["geo_code"]): r["valor"] for _, r in df_agregado.iterrows()}
     nombres = {str(r["geo_code"]): r.get("geo_nombre", r["geo_code"])
                for _, r in df_agregado.iterrows()}
 
@@ -152,7 +152,8 @@ def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
                 continue
 
         props["valor_censo"] = lookup.get(code)
-        props["nombre_geo"]  = nombres.get(code, props.get("nombre_dep", props.get("nombre_mun", code)))
+        props["nombre_geo"] = nombres.get(
+            code, props.get("nombre_dep", props.get("nombre_mun", code)))
         feature["properties"] = props
         features_out.append(feature)
 

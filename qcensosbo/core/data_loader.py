@@ -96,11 +96,19 @@ def fichas_cache_dir():
 
 
 def _download_file(url, dest_path, progress_cb=None):
-    """Descarga un archivo con progreso. Salta si ya existe en caché."""
+    """Descarga un archivo con progreso. Salta si ya existe en caché.
+
+    Solo acepta https: sin esa comprobación, `urlopen` atendería también `file:`
+    y `ftp:`, así que una URL mal formada (o un BASE_URL alterado) podría acabar
+    copiando un archivo local en la caché en vez de descargarlo.
+    """
     if os.path.exists(dest_path):
         if progress_cb:
             progress_cb(100)
         return
+
+    if not str(url).startswith("https://"):
+        raise ValueError(f"Solo se descargan URLs https, no: {url}")
 
     tmp_path = str(dest_path) + ".tmp"
     try:

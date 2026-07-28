@@ -6,9 +6,6 @@ Permite usar los datos censales en modelos gráficos, procesamiento
 por lotes y desde la consola Python de QGIS.
 """
 
-import json
-import os
-import tempfile
 from pathlib import Path
 
 from qgis.core import (
@@ -16,7 +13,6 @@ from qgis.core import (
     QgsProcessingParameterEnum,
     QgsProcessingParameterString,
     QgsProcessingParameterFeatureSink,
-    QgsProcessingOutputString,
     QgsFeatureSink,
     QgsFeature,
     QgsFields,
