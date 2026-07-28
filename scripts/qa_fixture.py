@@ -23,12 +23,47 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import qcensosbo.core.query_engine as qe          # noqa: E402
+import qcensosbo.core.data_loader as dl          # noqa: E402
+import qcensosbo.core.query_engine as qe         # noqa: E402
 
 # El plugin registra un os._exit al importar duckdb (evita el SIGABRT de QGIS al
 # cerrar); aquí estorbaría, porque mataría el script antes de escribir el pickle.
 qe._register_hard_exit = lambda: None
 qe._hard_exit_registered = True
+
+
+def _descargar_sin_qgis(url, dest_path, progress_cb=None):
+    """Descarga con urllib, para esta fase que corre FUERA de QGIS.
+
+    El plugin usa `QgsBlockingNetworkRequest` (respeta el proxy de QGIS y evita el
+    hallazgo Bandit B310 que bloquea el envío al repositorio oficial), pero esta
+    fase se ejecuta con un Python que tiene duckdb y no tiene QGIS. Así que aquí
+    se sustituye por urllib: el script vive en `scripts/`, fuera del ZIP, por lo
+    que no entra en el escaneo de seguridad.
+    """
+    import urllib.request
+    if os.path.exists(dest_path):
+        if progress_cb:
+            progress_cb(100)
+        return
+    if not str(url).startswith("https://"):
+        raise ValueError(f"Solo https: {url}")
+    tmp = str(dest_path) + ".tmp"
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "q-censosbo-qa"})
+        with urllib.request.urlopen(req) as r, open(tmp, "wb") as f:
+            f.write(r.read())
+        os.replace(tmp, dest_path)
+        if progress_cb:
+            progress_cb(100)
+    except Exception:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+
+
+dl._download_file = _descargar_sin_qgis
 
 from qcensosbo.core.data_loader import get_tables_for_year          # noqa: E402
 from qcensosbo.core.query_engine import (                           # noqa: E402

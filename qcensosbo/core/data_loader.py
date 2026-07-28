@@ -13,7 +13,6 @@ Estructura de releases:
 """
 
 import os
-import urllib.request
 from pathlib import Path
 
 from .fichas import TAG as FICHAS_TAG
@@ -96,11 +95,21 @@ def fichas_cache_dir():
 
 
 def _download_file(url, dest_path, progress_cb=None):
-    """Descarga un archivo con progreso. Salta si ya existe en caché.
+    """Descarga un archivo a `dest_path`. Salta si ya existe en caché.
 
-    Solo acepta https: sin esa comprobación, `urlopen` atendería también `file:`
-    y `ftp:`, así que una URL mal formada (o un BASE_URL alterado) podría acabar
-    copiando un archivo local en la caché en vez de descargarlo.
+    Usa **la pila de red de QGIS** (`QgsBlockingNetworkRequest`), no `urllib`, por
+    dos razones:
+
+      - Respeta los ajustes de **proxy** y los certificados configurados en QGIS.
+        Con `urllib` el plugin no veía el proxy, lo que rompe la descarga en redes
+        institucionales (justo el público de este plugin). Es además lo que pide la
+        guía de publicación de complementos.
+      - `urllib.request.urlopen` atiende también `file:` y `ftp:`, y el escáner de
+        seguridad del repositorio oficial lo marca como hallazgo bloqueante
+        (Bandit B310).
+
+    Va en un QThread (ver los workers del panel), así que la variante *blocking* es
+    la adecuada: no bloquea la interfaz.
     """
     if os.path.exists(dest_path):
         if progress_cb:
@@ -110,29 +119,43 @@ def _download_file(url, dest_path, progress_cb=None):
     if not str(url).startswith("https://"):
         raise ValueError(f"Solo se descargan URLs https, no: {url}")
 
+    from qgis.core import QgsBlockingNetworkRequest
+    from qgis.PyQt.QtCore import QUrl
+    from qgis.PyQt.QtNetwork import QNetworkRequest
+
+    peticion = QNetworkRequest(QUrl(url))
+    peticion.setRawHeader(b"User-Agent", b"q-censosbo-qgis")
+    # Sigue las redirecciones: los assets de GitHub Releases redirigen a un CDN.
+    peticion.setAttribute(QNetworkRequest.FollowRedirectsAttribute, True)
+
+    bloqueante = QgsBlockingNetworkRequest()
+    if progress_cb:
+        bloqueante.downloadProgress.connect(
+            lambda recibido, total: progress_cb(
+                int(recibido / total * 100) if total > 0 else 0))
+
+    codigo = bloqueante.get(peticion)
+    if codigo != QgsBlockingNetworkRequest.NoError:
+        raise RuntimeError(
+            f"No se pudo descargar {url}: {bloqueante.errorMessage()}")
+
+    contenido = bytes(bloqueante.reply().content())
+    if not contenido:
+        raise RuntimeError(f"La descarga de {url} llegó vacía.")
+
+    # Escritura atómica: un archivo a medias en la caché se daría por bueno en la
+    # siguiente ejecución (el chequeo de caché es "existe el archivo").
     tmp_path = str(dest_path) + ".tmp"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "q-censosbo-qgis/0.1"})
-        with urllib.request.urlopen(req) as response:
-            total = int(response.headers.get("Content-Length", 0))
-            downloaded = 0
-            chunk = 8192
-            with open(tmp_path, "wb") as f:
-                while True:
-                    data = response.read(chunk)
-                    if not data:
-                        break
-                    f.write(data)
-                    downloaded += len(data)
-                    if progress_cb and total > 0:
-                        progress_cb(int(downloaded / total * 100))
-        os.rename(tmp_path, dest_path)
-        if progress_cb:
-            progress_cb(100)
+        with open(tmp_path, "wb") as f:
+            f.write(contenido)
+        os.replace(tmp_path, dest_path)
     except Exception:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
         raise
+    if progress_cb:
+        progress_cb(100)
 
 
 def download_codebook(anio, progress_cb=None):

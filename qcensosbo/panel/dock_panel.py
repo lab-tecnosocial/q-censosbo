@@ -31,7 +31,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QThread
 
 from ..core.data_loader import get_tables_for_year
-from ..core import fichas
+from ..core import fichas, log
 from ..core.query_engine import (
     duckdb_available, install_duckdb,
     get_parquet_urls, get_first_url,
@@ -481,8 +481,9 @@ class CensosBOPanel(QDockWidget):
         combo.setMinimumContentsLength(n_chars)
         try:
             combo.view().setTextElideMode(Qt.ElideRight)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Sin elipsis el texto se corta en seco: cosmético.
+            log.aviso("No se pudo activar la elipsis en un combo", exc)
         if ayuda:
             combo.setProperty("ayuda", ayuda)
         combo.currentIndexChanged.connect(

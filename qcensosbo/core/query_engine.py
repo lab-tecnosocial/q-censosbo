@@ -21,6 +21,7 @@ import subprocess
 import sys
 import sysconfig
 
+from . import log
 from .data_loader import (
     BASE_URL, TABLE_FILES, DEPT_CODES, release_tag,
 )
@@ -105,8 +106,9 @@ def _hard_exit():
         app = QCoreApplication.instance()
         if app is not None:
             app.processEvents()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Estamos saliendo: no hay dónde mostrarlo, pero queda en el log.
+        log.aviso("No se pudieron sincronizar los ajustes al cerrar", exc)
     os._exit(0)
 
 
@@ -193,8 +195,9 @@ def _reimport_duckdb():
     try:
         import site
         site.addsitedir(site.getusersitepackages())
-    except Exception:
-        pass
+    except Exception as exc:
+        # Sin user-site solo se pierde la instalación con --user.
+        log.aviso("No se pudo añadir el directorio user-site", exc)
     _duckdb_checked = False
     _duckdb = None
     return _try_duckdb() is not None
@@ -375,8 +378,9 @@ def _make_con(srcs=None):
             con.execute("SET http_timeout = 30000;")        # ms por request
             con.execute("SET http_retries = 2;")
             con.execute("SET http_retry_wait_ms = 500;")
-        except Exception:
-            pass
+        except Exception as exc:
+            # Sin httpfs las consultas remotas fallarán con su propio mensaje.
+            log.aviso("No se pudo preparar la extensión httpfs de DuckDB", exc)
     return con
 
 
@@ -391,8 +395,8 @@ def _close(con):
     if con is not None:
         try:
             con.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.aviso("No se pudo cerrar la conexión DuckDB", exc)
 
 
 def _filtered_from(urls, cols, departamento=None, municipio=None, area=None):
@@ -475,8 +479,9 @@ def _describe_cols(con, url):
             "DESCRIBE SELECT * FROM read_parquet(?) LIMIT 0", [url]
         ).fetchall()
         cols = {r[0].lower(): r[0] for r in rows}
-    except Exception:
-        pass
+    except Exception as exc:
+        # Sin schema se usan los nombres estándar (_geo_col) como respaldo.
+        log.aviso(f"No se pudo leer el schema de {url}", exc)
     _schema_cache[cache_key] = cols
     return cols
 
@@ -851,5 +856,5 @@ def cleanup():
     try:
         import gc
         gc.collect()
-    except Exception:
-        pass
+    except Exception as exc:
+        log.aviso("Falló el recolector de basura durante la limpieza", exc)

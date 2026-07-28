@@ -1,0 +1,27 @@
+[bandit]
+# Configuración reconocida por el escáner de plugins.qgis.org (ver
+# https://plugins.qgis.org/docs/security-scanning/config-files). Solo se suprime
+# lo que no se puede eliminar sin renunciar a la función del plugin; el resto de
+# hallazgos se corrigieron en el código (v0.4.3).
+#
+# B608 — "Hardcoded SQL expression" (16 hallazgos, core/query_engine.py)
+#   El motor construye el SQL de agregación dinámicamente: es su función. Lo que
+#   se interpola NO es entrada libre:
+#     · Las rutas y URLs de los datos van como parámetro enlazado —
+#       read_parquet(?) con la lista en `params` — nunca dentro del texto SQL.
+#     · Los nombres de columna salen del esquema del propio Parquet
+#       (_describe_cols) y se eligen contra una lista blanca (_pick_col).
+#     · Los códigos de categoría se comparan como entero, o como cadena con las
+#       comillas escapadas (_cat_filter_sql), y provienen del diccionario
+#       oficial del censo.
+#   El «Modo SQL avanzado» sí ejecuta SQL escrito por la usuaria, igual que la
+#   calculadora de campos o el gestor de bases de datos de QGIS: corre en una
+#   conexión DuckDB en memoria, de solo lectura sobre archivos remotos, en la
+#   máquina de quien lo escribe. No hay servidor ni datos de terceros expuestos.
+#
+# B404 / B603 — importar y usar `subprocess` (2 hallazgos, core/query_engine.py)
+#   DuckDB no viene con QGIS y es obligatorio para el plugin, así que se instala
+#   con `python -m pip install duckdb` en el Python de QGIS la primera vez. La
+#   orden es una lista fija de argumentos, sin shell y sin ningún elemento
+#   construido a partir de entrada del usuario (_run_pip).
+skips = B608,B404,B603

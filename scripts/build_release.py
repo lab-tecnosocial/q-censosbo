@@ -71,7 +71,10 @@ def verificar(zip_path):
     problemas = []
     if raices != {PLUGIN_DIR.name}:
         problemas.append(f"la raíz del ZIP debe ser solo '{PLUGIN_DIR.name}/': {raices}")
-    for obligatorio in ("metadata.txt", "__init__.py", "LICENSE"):
+    # `.bandit` es un dotfile: la guía del repositorio oficial advierte de que
+    # algunas herramientas de empaquetado los excluyen sin avisar, y sin él el
+    # escaneo vuelve a bloquear el plugin por los 18 hallazgos irreducibles.
+    for obligatorio in ("metadata.txt", "__init__.py", "LICENSE", ".bandit"):
         if f"{PLUGIN_DIR.name}/{obligatorio}" not in nombres:
             problemas.append(f"falta {obligatorio}")
     basura = [n for n in nombres

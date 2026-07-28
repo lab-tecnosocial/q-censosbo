@@ -46,8 +46,9 @@ class CensosBolivaPlugin:
         try:
             from .core.query_engine import cleanup as duckdb_cleanup
             duckdb_cleanup()
-        except Exception:
-            pass
+        except Exception as exc:
+            from .core.log import aviso
+            aviso("No se pudo limpiar el motor de consulta al descargar el plugin", exc)
 
     def _toggle_panel(self):
         if self.panel:

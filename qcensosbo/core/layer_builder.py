@@ -18,6 +18,7 @@ import re
 import uuid
 from pathlib import Path
 
+from . import log
 from .data_loader import cache_dir
 
 
@@ -398,8 +399,9 @@ def _estilo_contexto(layer):
         })
         layer.renderer().setSymbol(simbolo)
         layer.triggerRepaint()
-    except Exception:
-        pass
+    except Exception as exc:
+        # El estilo del contexto es decorativo: la capa sirve igual sin él.
+        log.aviso("No se pudo aplicar el estilo a la capa de contexto", exc)
 
 
 def _capa_memoria_unidades(geoms, lookup, area):
@@ -644,5 +646,6 @@ def _apply_categorical_style(layer, field_name, labels=None):
         renderer = QgsCategorizedSymbolRenderer(field_name, categories)
         layer.setRenderer(renderer)
         layer.triggerRepaint()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Sin simbología la capa se carga igual, con el estilo por defecto.
+        log.aviso("No se pudo aplicar la simbología categórica", exc)
