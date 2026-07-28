@@ -74,6 +74,11 @@ def _register_hard_exit():
     Solo se registra si DuckDB llegó a importarse (las sesiones que no lo usan no
     se ven afectadas). No interfiere con recargar el plugin: `aboutToQuit` solo
     dispara al cerrar la aplicación, no en `unload()`.
+
+    Como `os._exit` salta el apagado ordenado de TODO QGIS —incluidos los
+    handlers de otros plugins conectados a `aboutToQuit` después de este—, antes
+    de salir se vacía la cola de eventos pendientes y se fuerza el volcado de
+    QSettings, para no perder los ajustes de la sesión.
     """
     global _hard_exit_registered
     if _hard_exit_registered:
@@ -82,13 +87,27 @@ def _register_hard_exit():
         from qgis.PyQt.QtCore import QCoreApplication
         app = QCoreApplication.instance()
         if app is not None:
-            app.aboutToQuit.connect(lambda: os._exit(0))
+            app.aboutToQuit.connect(_hard_exit)
         else:
             raise RuntimeError("QCoreApplication no disponible")
     except Exception:
         import atexit
         atexit.register(os._exit, 0)
     _hard_exit_registered = True
+
+
+def _hard_exit():
+    """Cierra el proceso saltándose los destructores estáticos de DuckDB."""
+    try:
+        from qgis.PyQt.QtCore import QCoreApplication
+        from qgis.core import QgsSettings
+        QgsSettings().sync()
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.processEvents()
+    except Exception:
+        pass
+    os._exit(0)
 
 
 def duckdb_available():
@@ -607,10 +626,17 @@ def aggregate_geo(urls, nivel, variable="__count__", agg="__count__",
             FROM {src} WHERE {variable} IS NOT NULL GROUP BY {group}
         """
     elif agg == "pct_category" and category is not None:
+        # Denominador = casos VÁLIDOS de la variable (COUNT(col) ignora los NULL),
+        # no COUNT(*). Muchas preguntas del censo solo aplican a un subconjunto
+        # (77 de las 119 columnas de 2024/personas tienen <99 % de cobertura), y
+        # dividir por el total de registros subestimaba el porcentaje —hasta 2,5×—
+        # además de ser incoherente con el resto de agregaciones, que ya filtran
+        # los NULL. Ver `variable_coverage` para informar del universo real.
         sql = f"""
             SELECT {geo_select},
                    ROUND(100.0 * COUNT(CASE WHEN {_cat_filter_sql(variable, category)}
-                                            THEN 1 END) / NULLIF(COUNT(*), 0), 2) AS valor
+                                            THEN 1 END)
+                         / NULLIF(COUNT({variable}), 0), 2) AS valor
             FROM {src} GROUP BY {group}
         """
     else:
@@ -644,8 +670,9 @@ def _national_value_sql(variable, agg, category):
     if agg == "mode":
         return f"MODE({v})"
     if agg == "pct_category" and category is not None:
+        # Mismo denominador que aggregate_geo: casos válidos, no todos los registros.
         return (f"ROUND(100.0 * COUNT(*) FILTER (WHERE {_cat_filter_sql(v, category)}) "
-                f"/ NULLIF(COUNT(*), 0), 2)")
+                f"/ NULLIF(COUNT({v}), 0), 2)")
     return "COUNT(*)"
 
 
@@ -667,6 +694,59 @@ def aggregate_national(urls, variable="__count__", agg="__count__",
         return row[0] if row else None
     except Exception:
         return None
+    finally:
+        _close(con)
+
+
+def variable_coverage(urls, variable, departamento=None, municipio=None, area=None):
+    """(n_total, n_validos) de una variable en el territorio consultado.
+
+    El porcentaje de una categoría se calcula sobre los casos válidos, así que el
+    panel necesita decir cuál es ese universo: muchas preguntas del censo solo
+    aplican a un subgrupo (mujeres en edad fértil, ocupados, mayores de 4 años…).
+    Es un par de COUNT sobre una sola columna: barato incluso en remoto.
+
+    Retorna (None, None) si la consulta falla, para que el resumen simplemente
+    omita la nota en vez de romper.
+    """
+    if variable in (None, "", "__count__", "__loading__", "__error__"):
+        return None, None
+    con = _make_con(urls)
+    try:
+        cols = _describe_cols(con, urls[0])
+        src, params = _filtered_from(urls, cols, departamento, municipio, area)
+        row = con.execute(
+            f"SELECT COUNT(*), COUNT({variable}) FROM {src}", params).fetchone()
+        return (int(row[0]), int(row[1])) if row else (None, None)
+    except Exception:
+        return None, None
+    finally:
+        _close(con)
+
+
+def distinct_values(urls, variable, limit=60, departamento=None, municipio=None,
+                    area=None):
+    """Valores distintos de una variable, ordenados, como lista de strings.
+
+    Respaldo para las variables categóricas que el diccionario de etiquetas no
+    cubre: sin esto, «Porcentaje» pedía una categoría que la UI no podía ofrecer.
+    Se limita a `limit` valores porque un dominio mayor no es categórico en la
+    práctica (y el combo sería inservible).
+    """
+    if variable in (None, "", "__count__", "__loading__", "__error__"):
+        return []
+    con = _make_con(urls)
+    try:
+        cols = _describe_cols(con, urls[0])
+        src, params = _filtered_from(urls, cols, departamento, municipio, area)
+        rows = con.execute(
+            f"SELECT DISTINCT CAST({variable} AS VARCHAR) AS v FROM {src} "
+            f"WHERE {variable} IS NOT NULL ORDER BY v LIMIT {int(limit) + 1}",
+            params).fetchall()
+        vals = [str(r[0]) for r in rows]
+        return [] if len(vals) > limit else vals
+    except Exception:
+        return []
     finally:
         _close(con)
 

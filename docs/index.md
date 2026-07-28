@@ -12,13 +12,15 @@ sin tener que descargar archivos pesados.
 - **Consulta remota y veloz**: lee los microdatos en formato Parquet alojados en GitHub Releases
   usando DuckDB; una agregación transfiere unos pocos MB en vez del archivo completo.
 - **Indicadores por departamento o municipio**: conteo, media, mediana, suma, desviación
-  estándar, **moda** (categoría más frecuente) y **porcentaje de una categoría**.
+  estándar, **moda** (categoría más frecuente) y **porcentaje de una categoría** (calculado sobre
+  los casos con dato, y el panel dice cuántos son).
 - **Manzanos y comunidades del CPV-2024**: 268.604 unidades censales con los 194 indicadores de
-  la ficha resumen del INE, para mapas intraurbanos de a un municipio.
+  la ficha resumen del INE (245 opciones, contando las que suman ambos sexos), para mapas
+  intraurbanos de a un municipio.
 - **Reconoce el tipo de variable** (categórica o numérica) desde el diccionario oficial y
   muestra **etiquetas legibles** (p. ej. `1 → Quechua`) en vez de códigos.
 - **Mapas coropléticos** con leyenda apropiada y un **resumen del resultado** que indica el
-  valor de referencia del territorio y la distribución entre unidades.
+  valor de referencia del territorio, las clases que tendrá el mapa y lo que queda fuera.
 
 ## Cómo funciona
 

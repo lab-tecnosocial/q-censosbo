@@ -71,6 +71,14 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
             "• Expresión SQL (opcional): fórmula DuckDB libre, ej. AVG(p26_edad)\n\n"
             "Si se escribe una Expresión SQL, los campos Variable y Agregación se ignoran. "
             "La expresión SQL requiere DuckDB (se instala automáticamente al abrir el plugin).\n\n"
+            "«% de categoría» se calcula sobre los CASOS VÁLIDOS de la variable "
+            "(los registros con valor nulo quedan fuera del denominador), igual que "
+            "el resto de agregaciones. Muchas preguntas del censo solo aplican a un "
+            "subgrupo, así que el resultado es el porcentaje entre quienes "
+            "respondieron, no entre toda la población.\n\n"
+            "1976 solo admite el nivel departamental (ese censo usa cantón, no "
+            "municipio). Cuatro municipios de creación reciente aparecen en los "
+            "datos pero no en las geometrías del plugin, así que salen sin pintar.\n\n"
             "La capa sale sin simbología: aplícala en QGIS, o usa el panel del "
             "plugin, que sí la aplica. Para el nivel de manzano y comunidad del "
             "CPV-2024, usa «Indicador por manzano/comunidad»."
@@ -169,6 +177,20 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
 
         # Construir lookup geo_code → valor
         lookup = {str(r["geo_code"]): r["valor"] for _, r in df.iterrows()}
+
+        # Los códigos que no tienen polígono no se pintan: decirlo en el log en
+        # vez de dejar que el conteo de la capa no cuadre con el de los datos.
+        try:
+            from ...core.layer_builder import cobertura_geo
+        except ImportError:
+            from qcensosbo.core.layer_builder import cobertura_geo
+        n_map, sin_geom = cobertura_geo(lookup.keys(), nivel)
+        if sin_geom:
+            feedback.pushWarning(
+                f"{len(sin_geom)} de los {len(lookup)} resultados no tienen "
+                f"geometría en el plugin y no se dibujarán: "
+                f"{', '.join(sin_geom)}."
+            )
 
         # Cargar GeoJSON bundled
         geo_key = "departamentos" if nivel == "departamento" else "municipios"

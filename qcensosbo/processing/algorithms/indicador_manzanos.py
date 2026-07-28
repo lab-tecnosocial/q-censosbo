@@ -71,7 +71,13 @@ class IndicadorManzanosAlgorithm(QgsProcessingAlgorithm):
             "• Medida: el conteo, o su porcentaje sobre el total del bloque "
             "temático (p. ej. serv_agua_caneria / serv_agua_total).\n\n"
             "Las unidades cuya ficha el INE reserva por poca población salen con "
-            "valor_censo nulo. La capa no lleva simbología: aplícala en QGIS o usa "
+            "valor_censo nulo: a este nivel eso solo deja huecos en el mapa.\n\n"
+            "Si lo que quieres es el indicador por MUNICIPIO o DEPARTAMENTO, no "
+            "sumes estas fichas: cubren el 92 % de la población y de forma desigual "
+            "(del 85 % en Oruro al 94 % en La Paz), así que el resultado quedaría "
+            "deformado. Usa «Calcular indicador censal» con los microdatos, que "
+            "cubren el 100 %. Todo lo de la ficha se puede recalcular desde ellos.\n\n"
+            "La capa no lleva simbología: aplícala en QGIS o usa "
             "el panel del plugin, que sí la aplica."
         )
 

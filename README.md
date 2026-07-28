@@ -12,11 +12,13 @@ pesados. Basado en el trabajo del paquete de R [**censosbo**](https://github.com
 
 - Consulta los microdatos de forma remota y veloz con DuckDB.
 - Calcula indicadores por **departamento** o **municipio**: conteo, media, mediana, suma,
-  desviación, moda y porcentaje de una categoría.
+  desviación, moda y porcentaje de una categoría (sobre los casos con dato).
 - Mapea el CPV-2024 por **manzano urbano y comunidad rural**: 268.604 unidades censales con
-  194 indicadores de la ficha del INE, de a un municipio.
+  194 indicadores de la ficha del INE (245 opciones con las que suman ambos sexos), de a un
+  municipio.
 - Reconoce variables categóricas y numéricas y muestra etiquetas legibles.
-- Genera mapas coropléticos con leyenda apropiada y un resumen del resultado.
+- Genera mapas coropléticos con leyenda apropiada y un resumen que anticipa las clases del mapa
+  y declara lo que queda fuera del cálculo.
 
 ## Instalación
 

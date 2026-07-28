@@ -76,6 +76,23 @@ def geo_nombres(nivel):
     return result
 
 
+def cobertura_geo(codigos, nivel, departamento=None):
+    """(mapeados, sin_geometria) de un conjunto de códigos frente al GeoJSON.
+
+    El GeoJSON empaquetado no tiene todos los municipios que aparecen en los
+    datos: faltan 4 de creación reciente (031304, 050405, 051204, 080901), que
+    salen en 2024 y en 2001. Antes se perdían en silencio —el resumen decía 343
+    unidades y el mapa pintaba 339—, así que el panel usa esto para decirlo.
+    """
+    disponibles = set(geo_nombres(nivel))
+    if departamento and nivel == "municipio":
+        prefijo = str(departamento).zfill(2)
+        disponibles = {c for c in disponibles if c.startswith(prefijo)}
+    pedidos = {str(c) for c in codigos}
+    mapeados = pedidos & disponibles
+    return len(mapeados), sorted(pedidos - disponibles)
+
+
 def municipios_por_depto(idep):
     """Municipios de un departamento: [(nombre, geo_code de 6 dígitos)], ordenados.
 
@@ -172,28 +189,96 @@ def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
     return layer
 
 
+CLASIFICACIONES = ("jenks", "quantile", "equal", "stddev")
+
+
+def _classification_method(clasificacion):
+    """Instancia del método de clasificación de QGIS ('jenks' por defecto)."""
+    from qgis.core import (
+        QgsClassificationJenks,
+        QgsClassificationQuantile,
+        QgsClassificationEqualInterval,
+        QgsClassificationStandardDeviation,
+    )
+    method_map = {
+        "jenks":    QgsClassificationJenks,
+        "quantile": QgsClassificationQuantile,
+        "equal":    QgsClassificationEqualInterval,
+        "stddev":   QgsClassificationStandardDeviation,
+    }
+    return method_map.get(clasificacion, QgsClassificationJenks)()
+
+
+def class_bounds(values, clasificacion="jenks", n_classes=5):
+    """Cortes de clase [(inferior, superior), …] con el MÉTODO REAL de QGIS.
+
+    Es la única fuente de verdad de la clasificación: la usan el renderer del mapa
+    y el histograma del resumen del panel, para que la vista previa muestre
+    exactamente los rangos que va a tener la leyenda.
+
+    Depura las clases degeneradas (`inferior == superior`) que Jenks produce con
+    muestras pequeñas: con 9 departamentos devuelve dos rangos "26,45 – 26,45"
+    idénticos, que en la leyenda salen repetidos y vacíos. Al quitarlos se baja el
+    borde inferior de la primera clase superviviente al mínimo real, de modo que
+    la cobertura de valores no cambia.
+
+    Retorna [] si no hay valores utilizables.
+    """
+    vals = [float(v) for v in values if v is not None]
+    if not vals:
+        return []
+    vmin, vmax = min(vals), max(vals)
+    if vmin == vmax:
+        return [(vmin, vmax)]
+
+    n = max(1, min(int(n_classes), len(set(vals))))
+    try:
+        rangos = _classification_method(clasificacion).classes(vals, n)
+        pares = [(r.lowerBound(), r.upperBound()) for r in rangos]
+    except Exception:
+        pares = []
+    if not pares:
+        paso = (vmax - vmin) / n
+        pares = [(vmin + i * paso, vmin + (i + 1) * paso) for i in range(n)]
+
+    limpios = [(lo, hi) for lo, hi in pares if hi > lo]
+    if not limpios:
+        return [(vmin, vmax)]
+    # Recuperar el borde inferior si se descartaron clases degeneradas al inicio.
+    lo0, hi0 = limpios[0]
+    limpios[0] = (min(lo0, vmin), hi0)
+    return limpios
+
+
+def bins_from_bounds(bounds):
+    """Bordes de histograma [b0, b1, …] a partir de los cortes de `class_bounds`."""
+    if not bounds:
+        return []
+    edges = [bounds[0][0]] + [hi for _, hi in bounds]
+    # np.histogram exige bordes estrictamente crecientes.
+    salida = [edges[0]]
+    for e in edges[1:]:
+        if e > salida[-1]:
+            salida.append(e)
+    return salida if len(salida) >= 2 else []
+
+
 def _graduated_renderer(layer, field_name, n_classes=5, clasificacion="jenks"):
-    """Construye el renderer graduado de una capa (o None si algo falla)."""
+    """Construye el renderer graduado de una capa (o None si algo falla).
+
+    Los cortes salen de `class_bounds`, así que la leyenda nunca muestra clases
+    repetidas y coincide con el histograma que el panel enseñó al consultar.
+    """
     try:
         from qgis.core import (
             NULL,
             QgsGraduatedSymbolRenderer,
+            QgsRendererRange,
             QgsStyle,
-            QgsClassificationJenks,
-            QgsClassificationQuantile,
-            QgsClassificationEqualInterval,
-            QgsClassificationStandardDeviation,
+            QgsSymbol,
             QgsRendererRangeLabelFormat,
         )
         from qgis.PyQt.QtGui import QColor
-
-        method_map = {
-            "jenks":    QgsClassificationJenks,
-            "quantile": QgsClassificationQuantile,
-            "equal":    QgsClassificationEqualInterval,
-            "stddev":   QgsClassificationStandardDeviation,
-        }
-        method_cls = method_map.get(clasificacion, QgsClassificationJenks)
 
         style = QgsStyle.defaultStyle()
         ramp = style.colorRamp("Reds")
@@ -201,27 +286,34 @@ def _graduated_renderer(layer, field_name, n_classes=5, clasificacion="jenks"):
             from qgis.core import QgsGradientColorRamp
             ramp = QgsGradientColorRamp(QColor("#fee5d9"), QColor("#a50f15"))
 
-        # Evitar clases duplicadas ("24–24" repetido) cuando hay muy pocos
-        # valores distintos: no tiene sentido pedir más clases que valores únicos.
-        # Ojo: un campo vacío llega como QVariant nulo, NO como None, así que
-        # `is not None` no lo descarta; hay que comparar con el NULL de QGIS.
-        # A nivel de manzano importa: la mitad de las unidades no tiene ficha.
-        distinct = {
-            feat[field_name] for feat in layer.getFeatures()
-            if feat[field_name] != NULL
-        }
-        n_classes = max(1, min(n_classes, len(distinct)))
-
-        renderer = QgsGraduatedSymbolRenderer(field_name)
-        renderer.setClassificationMethod(method_cls())
-        renderer.updateClasses(layer, n_classes)
-        renderer.updateColorRamp(ramp)
+        # Un campo vacío llega como QVariant nulo, NO como None: `is not None` no
+        # lo descarta. A nivel de manzano importa, porque casi la mitad de las
+        # unidades no tiene ficha.
+        valores = [feat[field_name] for feat in layer.getFeatures()
+                   if feat[field_name] != NULL]
+        bounds = class_bounds(valores, clasificacion, n_classes)
+        if not bounds:
+            return None
 
         fmt = QgsRendererRangeLabelFormat()
         fmt.setFormat("%1 – %2")
         fmt.setPrecision(2)
         fmt.setTrimTrailingZeroes(True)
+
+        rangos = []
+        n = len(bounds)
+        for i, (lo, hi) in enumerate(bounds):
+            simbolo = QgsSymbol.defaultSymbol(layer.geometryType())
+            simbolo.setColor(ramp.color(i / (n - 1) if n > 1 else 0.0))
+            rango = QgsRendererRange(lo, hi, simbolo, "")
+            # labelForRange solo acepta el propio rango, no un par de floats.
+            rango.setLabel(fmt.labelForRange(rango))
+            rangos.append(rango)
+
+        renderer = QgsGraduatedSymbolRenderer(field_name, rangos)
+        renderer.setClassificationMethod(_classification_method(clasificacion))
         renderer.setLabelFormat(fmt)
+        renderer.setSourceColorRamp(ramp.clone())
         return renderer
     except Exception:
         return None

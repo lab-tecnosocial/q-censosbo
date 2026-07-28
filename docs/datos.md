@@ -25,11 +25,16 @@ El nivel más fino del censo: **268.604 unidades censales** —manzanos urbanos 
 rurales— con **194 indicadores** cada una, tomados de la ficha resumen que el INE publica en su
 geoportal. No son microdatos: son conteos ya agregados por unidad.
 
+!!! note "194 indicadores, 245 opciones en el selector"
+    La ficha del INE trae 194 columnas, casi todas separadas por sexo (`_h` / `_m`). El plugin
+    añade **51 opciones derivadas** que suman ambos sexos (lo que normalmente se quiere mapear),
+    así que el selector muestra **245** entradas para las mismas 194 columnas de origen.
+
 Dos tablas:
 
 - **Ficha de indicadores** — los 194 indicadores (población por edad y sexo, educación, salud,
   migración, empleo, actividad económica, vivienda, servicios básicos, TIC, materiales,
-  hacinamiento y tipo de hogar).
+  hacinamiento y tipo de hogar), más las 51 derivadas de ambos sexos.
 - **Unidades censales** — el universo completo, con población, viviendas y si el INE libera la
   ficha de esa unidad.
 
@@ -46,6 +51,11 @@ Cosas a tener en cuenta:
 - **Medidas**: *Total (conteo)* o *% del total del bloque*. El porcentaje divide el indicador
   entre el total de su bloque temático (p. ej. `serv_agua_caneria / serv_agua_total`) sumando
   antes numerador y denominador, que es la forma correcta de agregar una proporción.
+- **Los totales agregados están incompletos, y de forma desigual**: al sumar un indicador por
+  municipio o departamento solo entran las unidades con ficha liberada. La cobertura poblacional
+  varía del **85 %** (Oruro) al **94 %** (La Paz) —y por área, del 89,5 % urbano al 99,2 % rural,
+  porque lo que el INE reserva son sobre todo manzanos urbanos pequeños—, así que un mapa de
+  totales queda sesgado de manera no uniforme. Para comparar territorios usa el porcentaje.
 - Los datos viven en un release aparte (`data-fichas-v1.0.0`) y las geometrías se descargan y
   cachean en `~/.censosbo_qgis/fichas/` (de 0,3 a 6,7 MB por departamento).
 
@@ -70,7 +80,14 @@ viene **empaquetado con el plugin**, así que ese selector se llena al instante 
 - El total de **viviendas** de la tabla de unidades da un 0,23 % menos que la tabla de viviendas
   de microdatos: el INE las cuenta distinto en el geoportal. Para el total de viviendas de un
   territorio conviene usar la tabla **Viviendas**.
-- **2001 (municipal)**: algunos municipios de 2001 no coinciden con la división municipal
-  actual de las geometrías, por lo que no se pintan (cobertura ≈ 99%).
+- **Cuatro municipios sin geometría**: los datos de **2024 y 2001** traen 343 municipios, pero los
+  GeoJSON incluidos en el plugin tienen 339. Faltan cuatro de creación reciente —`031304`,
+  `050405`, `051204`, `080901`— que no se pintan. 2012 y 1992 se mapean al 100 %. El panel avisa
+  del desajuste en el resumen y al generar el mapa, y el algoritmo de Processing lo registra en el
+  log.
+- **Porcentaje de una categoría**: se calcula sobre los **casos con dato** de la variable, no sobre
+  todos los registros (77 de las 119 columnas de 2024/personas tienen menos del 99 % de cobertura,
+  porque la pregunta solo aplica a un subgrupo). El resumen indica siempre cuántos casos entraron
+  en el denominador.
 - Los códigos pueden venir con ceros a la izquierda en los datos (`"028"`) y sin ellos en el
   diccionario (`"28"`); el plugin los empareja correctamente.

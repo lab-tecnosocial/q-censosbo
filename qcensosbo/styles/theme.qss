@@ -62,6 +62,21 @@ QLabel#lbl_var_desc {
     font-style: italic;
 }
 
+/* Título del resumen: qué se está mapeando. Es el dato más importante del
+   bloque, así que va por encima de los encabezados de sección. */
+QLabel#lbl_result_title {
+    font-size: 12px;
+    font-weight: bold;
+    padding: 2px 0 4px 0;
+}
+
+/* Aviso junto al selector de agregación (tipo desconocido, sin categorías). */
+QLabel#lbl_aviso {
+    font-size: 10px;
+    font-style: italic;
+    color: palette(highlight);
+}
+
 QProgressBar#progress_descarga {
     border: 1px solid palette(mid);
     border-radius: 4px;
@@ -89,45 +104,54 @@ QProgressBar#stat_bar::chunk {
     border-radius: 2px;
 }
 
-QPushButton#btn_consultar {
-    border: 1px solid palette(highlight);
-    border-radius: 4px;
-    padding: 6px 12px;
-    font-size: 11px;
-    min-height: 28px;
-}
+/* ── Los dos pasos ────────────────────────────────────────────────────────────
+   Misma forma y mismo tamaño: son dos pasos del mismo flujo, no una acción
+   principal y otra secundaria. El que toca pulsar lleva `paso_activo=true` y va
+   relleno; el otro queda delineado. El panel mueve el énfasis de 1 a 2 en cuanto
+   la consulta devuelve resultado (_update_button_emphasis).
+   ------------------------------------------------------------------------- */
 
-QPushButton#btn_consultar:hover {
-    background-color: palette(midlight);
-}
-
-QPushButton#btn_consultar:disabled {
-    border-color: palette(mid);
-    color: palette(mid);
-}
-
-QPushButton#btn_generar {
-    background-color: #1a3a5c;
-    color: #ffffff;
-    border: none;
+QPushButton#btn_paso {
     border-radius: 5px;
-    padding: 9px 16px;
+    padding: 8px 14px;
     font-size: 12px;
     font-weight: bold;
-    min-height: 36px;
+    min-height: 32px;
 }
 
-QPushButton#btn_generar:hover {
+/* Paso que toca ahora: relleno */
+QPushButton#btn_paso[paso_activo="true"] {
+    background-color: #1a3a5c;
+    color: #ffffff;
+    border: 1px solid #1a3a5c;
+}
+
+QPushButton#btn_paso[paso_activo="true"]:hover {
     background-color: #2a5a8c;
+    border-color: #2a5a8c;
 }
 
-QPushButton#btn_generar:pressed {
+QPushButton#btn_paso[paso_activo="true"]:pressed {
     background-color: #0f2540;
 }
 
-QPushButton#btn_generar:disabled {
-    background-color: palette(mid);
-    color: palette(midlight);
+/* Paso que ya no es el foco: delineado, mismo tamaño */
+QPushButton#btn_paso[paso_activo="false"] {
+    background-color: transparent;
+    border: 1px solid palette(mid);
+    color: palette(text);
+}
+
+QPushButton#btn_paso[paso_activo="false"]:hover {
+    border-color: palette(highlight);
+    background-color: palette(midlight);
+}
+
+/* Deshabilitado: se lee como "todavía no", sin llamar la atención */
+QPushButton#btn_paso:disabled {
+    background-color: transparent;
+    border: 1px dashed palette(mid);
+    color: palette(mid);
 }
 
 QFrame[frameShape="4"],
