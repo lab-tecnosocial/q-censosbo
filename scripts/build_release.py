@@ -24,6 +24,13 @@ EXCLUDE_DIRS = {"__pycache__"}
 EXCLUDE_NAMES = {".DS_Store"}
 EXCLUDE_SUFFIXES = {".pyc"}
 
+# Archivos de la raíz del repo que se copian DENTRO de qcensosbo/ en el ZIP.
+# El repositorio oficial de complementos RECHAZA el paquete si no encuentra
+# LICENSE ("Cannot find LICENSE in the plugin package. This file is required"),
+# y su guía de revisión pide también un README. Viven en la raíz del repo, así
+# que hay que añadirlos aquí en vez de duplicarlos dentro de qcensosbo/.
+EXTRA_ROOT_FILES = ["LICENSE", "README.md"]
+
 
 def build_zip():
     DIST.mkdir(exist_ok=True)
@@ -41,8 +48,38 @@ def build_zip():
             arcname = path.relative_to(ROOT).as_posix()
             zf.write(path, arcname)
             n += 1
+
+        for nombre in EXTRA_ROOT_FILES:
+            origen = ROOT / nombre
+            if not origen.exists():
+                raise SystemExit(
+                    f"✗ Falta {nombre} en la raíz del repo: el repositorio de "
+                    "complementos de QGIS lo exige dentro del paquete.")
+            zf.write(origen, f"{PLUGIN_DIR.name}/{nombre}")
+            n += 1
+
+    verificar(zip_path)
     print(f"✓ {zip_path}  ({n} archivos)")
     return zip_path
+
+
+def verificar(zip_path):
+    """Comprueba lo que el repositorio oficial valida al subir el paquete."""
+    with zipfile.ZipFile(zip_path) as zf:
+        nombres = zf.namelist()
+    raices = {n.split("/")[0] for n in nombres}
+    problemas = []
+    if raices != {PLUGIN_DIR.name}:
+        problemas.append(f"la raíz del ZIP debe ser solo '{PLUGIN_DIR.name}/': {raices}")
+    for obligatorio in ("metadata.txt", "__init__.py", "LICENSE"):
+        if f"{PLUGIN_DIR.name}/{obligatorio}" not in nombres:
+            problemas.append(f"falta {obligatorio}")
+    basura = [n for n in nombres
+              if "__pycache__" in n or n.endswith(".pyc") or ".DS_Store" in n]
+    if basura:
+        problemas.append(f"archivos que no deben ir: {basura[:3]}")
+    if problemas:
+        raise SystemExit("✗ ZIP inválido:\n  - " + "\n  - ".join(problemas))
 
 
 def main():
