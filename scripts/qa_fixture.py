@@ -70,6 +70,7 @@ from qcensosbo.core.query_engine import (                           # noqa: E402
     get_parquet_urls, get_columns, variable_coverage, distinct_values)
 from qcensosbo.core.aggregator import (                             # noqa: E402
     get_var_descriptions, get_var_types, get_value_labels,
+    get_var_universos, get_var_temas,
     agregar_datos, resumen_nacional, agregar_expresion, resumen_expresion)
 from qcensosbo.core import fichas                                   # noqa: E402
 
@@ -134,7 +135,8 @@ def _portable(obj):
 
 def main():
     fx = {"cols": {}, "descs": {}, "types": {}, "labels": {},
-          "agg": {}, "nat": {}, "cobertura": {}, "distinct": {}}
+          "agg": {}, "nat": {}, "cobertura": {}, "distinct": {},
+          "universos": {}, "temas": {}}
 
     print("1/5 Schemas y diccionarios de cada (año, tabla)…")
     for anio in (2024, 2012, 2001, 1992, 1976):
@@ -148,8 +150,13 @@ def main():
             fx["cols"][(anio, tabla)] = cols
             fx["descs"][(anio, tabla)] = get_var_descriptions(anio, tabla)
             fx["types"][(anio, tabla)] = get_var_types(anio, tabla)
+            # Añadidos por censosbo 1.5.0; vacíos con un diccionario anterior.
+            fx["universos"][(anio, tabla)] = get_var_universos(anio, tabla)
+            fx["temas"][(anio, tabla)] = get_var_temas(anio, tabla)
             print(f"    {anio} {tabla:11} {len(cols):3} columnas, "
-                  f"{len(fx['types'][(anio, tabla)]):3} tipos")
+                  f"{len(fx['types'][(anio, tabla)]):3} tipos, "
+                  f"{len(fx['universos'][(anio, tabla)]):3} universos, "
+                  f"{len(fx['temas'][(anio, tabla)]):3} temas")
 
     print("2/5 Etiquetas de valores (2024 personas y viviendas)…")
     for tabla in ("personas", "viviendas"):

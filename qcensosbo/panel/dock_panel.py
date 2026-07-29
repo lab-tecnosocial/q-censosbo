@@ -39,8 +39,8 @@ from ..core.query_engine import (
 )
 from ..core.aggregator import (
     agregar_datos, agregar_expresion, get_columns,
-    get_value_labels, get_var_descriptions, get_var_types,
-    resumen_nacional, resumen_expresion,
+    get_value_labels, get_var_descriptions, get_var_temas, get_var_types,
+    get_var_universos, resumen_nacional, resumen_expresion,
 )
 
 # Mapeo del 'tipo' del diccionario al tipo interno usado por el panel.
@@ -57,6 +57,10 @@ CONTEO_LABEL = "Conteo de registros (población / viviendas)"
 
 # Valores centinela que ocupan el combo de variables cuando no hay catálogo.
 NO_VAR = ("__loading__", "__error__")
+
+# Opción "sin filtro" del selector de tema.
+TODOS_TEMAS = "__todos__"
+TODOS_TEMAS_LABEL = "Todos los temas"
 
 
 def fmt_num(x, decimales=2, pct=False):
@@ -137,7 +141,7 @@ AYUDA = {
         "Unidad geográfica en la que se agrupa el resultado: un valor por cada\n"
         "una de estas unidades, y un polígono por cada valor en el mapa.\n\n"
         "• Departamental — 9 unidades.\n"
-        "• Municipal — 339 unidades.\n"
+        "• Municipal — 343 unidades.\n"
         "• Manzano/Comunidad — 268.604 unidades (solo fichas del CPV-2024).\n\n"
         "Solo aparecen los niveles que existen para el año y la tabla elegidos."
     ),
@@ -157,6 +161,15 @@ AYUDA = {
         "• Rural — comunidades, que el INE publica como puntos.\n"
         "• Ambas — dos capas agrupadas que comparten la escala de color,\n"
         "  para poder comparar lo urbano con lo rural."
+    ),
+    "tema": (
+        "Acota la lista de variables a un tema del censo, para no recorrer\n"
+        "cientos de columnas buscando una.\n\n"
+        "Los temas son los del catálogo del INE (educación, migración, servicios\n"
+        "básicos, fecundidad…) y son los mismos en los cinco censos, así que sirven\n"
+        "para encontrar la variable equivalente de otro año.\n\n"
+        "Ejemplo: «Educación» deja 11 variables de las 119 de personas en 2024.\n"
+        "Con «Todos los temas» se ve la lista completa."
     ),
     "variable": (
         "Qué se mide. La primera opción, «Conteo de registros», cuenta personas o\n"
@@ -181,6 +194,26 @@ AYUDA = {
         "etiquetas del censo; si la variable no está en él, se leen los valores\n"
         "del propio archivo.\n"
         "Ejemplo: en p25_sexo, «2 — Hombre» mapea el % de hombres."
+    ),
+    "bloque": (
+        "Acota la lista a un bloque temático de la ficha del INE, para no recorrer\n"
+        "las 245 opciones buscando una.\n\n"
+        "Los bloques son los del propio geoportal: población, educación, salud,\n"
+        "servicios básicos, materiales, hacinamiento… Cada uno tiene su total, que es\n"
+        "el denominador que usa la medida «% del total del bloque».\n\n"
+        "Ejemplo: «Servicios básicos» deja los indicadores de agua, baño, energía y\n"
+        "basura. Con «Todos los temas» se ve la lista completa."
+    ),
+    "densidad": (
+        "Divide el resultado entre la superficie de cada unidad, para obtener una\n"
+        "densidad en vez de un total.\n\n"
+        "Solo aparece con Conteo y con Suma, que son las únicas magnitudes en las que\n"
+        "tiene sentido: una edad promedio o un porcentaje «por km²» no significa nada.\n\n"
+        "Ejemplo: Conteo de personas por municipio + esta casilla = habitantes por km².\n\n"
+        "La superficie es la que declara la cartografía municipal del censo. No\n"
+        "incluye los grandes lagos y salares, que no pertenecen a ningún municipio,\n"
+        "así que en La Paz, Oruro y Potosí la densidad sale algo por encima de la\n"
+        "calculada con la superficie oficial del departamento."
     ),
     "clasificacion": (
         "Cómo se agrupan los valores en las clases de color del mapa.\n\n"
@@ -250,8 +283,11 @@ class ColumnsWorker(QThread):
     que sobre un `run()` bloqueante no cancela nada y solo congelaba la UI 300 ms
     en cada cambio de selección.
     """
-    # columns, {var: desc}, {var: tipo}, token
-    done = pyqtSignal(list, dict, dict, int)
+    # Un solo dict de metadatos en vez de una lista de posicionales: el diccionario
+    # de censosbo fue creciendo (etiqueta, tipo, universo, tema…) y cada dato nuevo
+    # obligaba a cambiar la firma de la señal y todos sus receptores.
+    # Claves: cols, descs, types, universos, temas. Vacío = el worker falló.
+    done = pyqtSignal(dict, int)
 
     def __init__(self, path_or_url, anio, tabla=None, remote=False, token=0):
         super().__init__()
@@ -263,12 +299,16 @@ class ColumnsWorker(QThread):
 
     def run(self):
         try:
-            cols = get_columns(self.path_or_url, self.remote)
-            descs = get_var_descriptions(self.anio, self.tabla)
-            types = get_var_types(self.anio, self.tabla)
-            self.done.emit(cols, descs, types, self.token)
+            meta = {
+                "cols":      get_columns(self.path_or_url, self.remote),
+                "descs":     get_var_descriptions(self.anio, self.tabla),
+                "types":     get_var_types(self.anio, self.tabla),
+                "universos": get_var_universos(self.anio, self.tabla),
+                "temas":     get_var_temas(self.anio, self.tabla),
+            }
+            self.done.emit(meta, self.token)
         except Exception:
-            self.done.emit([], {}, {}, self.token)
+            self.done.emit({}, self.token)
 
 
 class CategoriesWorker(QThread):
@@ -433,6 +473,11 @@ class CensosBOPanel(QDockWidget):
         self._cats_worker = None
         self._var_descriptions = {}
         self._var_types = {}                 # {variable: "categorica"|"numerica"|"texto"}
+        self._var_universos = {}             # {variable: "personas de 7 años o más"}
+        self._var_temas = {}                 # {variable: (tema, "Educación")}
+        self._var_columnas = []              # columnas mapeables del schema actual
+        self._cols_error = False
+        self._temas_disponibles = False
         # "count" | "categorical" | "numeric" | "ficha" | "unknown" | None
         self._current_var_type = None
         # Token de petición: descarta los resultados de workers obsoletos cuando
@@ -445,6 +490,7 @@ class CensosBOPanel(QDockWidget):
         # Resultado de "Consultar": (params_key, df, ctx). "Generar mapa" solo
         # dibuja la capa a partir de este resultado, sin volver a consultar.
         self._agg_result = None
+        self._resultado_crudo = None
 
         self._build_ui()
         self._apply_styles()
@@ -600,6 +646,13 @@ class CensosBOPanel(QDockWidget):
         # Labels guardados explícitamente: _sync_controls los oculta junto a su
         # campo (antes se buscaban recorriendo el QFormLayout, y la descripción
         # de la variable se quedaba visible en el modo SQL).
+        # Filtro por tema del catálogo del INE: sin él, elegir una variable es
+        # recorrer una lista plana de más de cien columnas. Se oculta cuando el
+        # diccionario no trae temas (anterior a censosbo 1.5.0).
+        self.lbl_tema = self._lbl_ayuda("Tema:", "tema")
+        self.combo_tema = self._compact(QComboBox(), ayuda=AYUDA["tema"])
+        form_analisis.addRow(self.lbl_tema, self.combo_tema)
+
         self.lbl_variable = self._lbl_ayuda("Variable:", "variable")
         self.combo_variable = self._compact(QComboBox(), ayuda=AYUDA["variable"])
         form_analisis.addRow(self.lbl_variable, self.combo_variable)
@@ -632,6 +685,15 @@ class CensosBOPanel(QDockWidget):
             self.combo_clasificacion.addItem(lbl, key)
         self._lbl_clasificacion = self._lbl_ayuda("Clasificación:", "clasificacion")
         form_analisis.addRow(self._lbl_clasificacion, self.combo_clasificacion)
+
+        # Densidad: divide el resultado por la superficie de cada unidad. Es una
+        # transformación del valor ya agregado, no otra agregación, así que activarla
+        # NO obliga a volver a consultar (igual que la clasificación).
+        self.chk_densidad = QCheckBox("Mostrar por km²")
+        self.chk_densidad.setToolTip(AYUDA["densidad"])
+        self.chk_densidad.setProperty("ayuda", AYUDA["densidad"])
+        self.chk_densidad.setVisible(False)
+        form_analisis.addRow(self.chk_densidad)
 
         self.lbl_categoria = self._lbl_ayuda("Categoría:", "categoria")
         self.combo_categoria = self._compact(QComboBox(), ayuda=AYUDA["categoria"])
@@ -820,6 +882,7 @@ class CensosBOPanel(QDockWidget):
         self.combo_anio.currentIndexChanged.connect(self._update_tabla_combo)
         self.combo_tabla.currentIndexChanged.connect(self._on_tabla_changed)
         self.combo_nivel.currentIndexChanged.connect(self._on_nivel_changed)
+        self.combo_tema.currentIndexChanged.connect(self._on_tema_changed)
         self.combo_variable.currentIndexChanged.connect(
             self._on_variable_changed)
         self.combo_agg.currentIndexChanged.connect(self._on_agg_changed)
@@ -829,6 +892,7 @@ class CensosBOPanel(QDockWidget):
         self.combo_categoria.currentIndexChanged.connect(
             self._invalidate_result)
         self.txt_sql.textChanged.connect(self._invalidate_result)
+        self.chk_densidad.toggled.connect(self._on_densidad_toggled)
         self.chk_avanzado.toggled.connect(self._on_avanzado_toggled)
         self.btn_consultar.clicked.connect(self._on_consultar_clicked)
         self.btn_generar.clicked.connect(self._on_generar_clicked)
@@ -986,16 +1050,36 @@ class CensosBOPanel(QDockWidget):
         for w in (self.lbl_variable, self.combo_variable,
                   self.lbl_agg, self.combo_agg):
             w.setVisible(not sql)
+
+        # El selector de agrupación aparece si hay con qué agrupar y no en el modo
+        # SQL, donde no hay lista de variables que acotar. Su nombre cambia con la
+        # tabla: los microdatos se agrupan por tema del catálogo del INE y las fichas
+        # por bloque de la ficha.
+        for w in (self.lbl_tema, self.combo_tema):
+            w.setVisible(not sql and self._temas_disponibles)
+        es_ficha = self.combo_tabla.currentData() in fichas.TABLAS
+        self.lbl_tema.setText("Bloque:" if es_ficha else "Tema:")
+        ayuda_grupo = AYUDA["bloque"] if es_ficha else AYUDA["tema"]
+        self.lbl_tema.setToolTip(ayuda_grupo)
+        self.combo_tema.setToolTip(ayuda_grupo)
+        self.combo_tema.setProperty("ayuda", ayuda_grupo)
         self.txt_sql.setVisible(sql)
         self.lbl_sql_hint.setVisible(sql)
 
-        # Descripción de la variable: solo si hay una variable a la vista.
+        # Descripción de la variable: solo si hay una variable a la vista. Se le
+        # añade el universo del INE (a quién se le preguntó), que es lo que decide
+        # si el resultado se puede leer como "de la población" o no.
         var = self.combo_variable.currentData() or ""
         desc = self._var_descriptions.get(var)
         hay_desc = bool(desc) and var not in NO_VAR and var != CONTEO_KEY
         self.lbl_var_desc.setVisible(not sql and hay_desc)
         if hay_desc:
-            self.lbl_var_desc.setText(desc)
+            universo = self._var_universos.get(var)
+            if universo and universo not in self._UNIVERSOS_OBVIOS:
+                self.lbl_var_desc.setText(f"{desc}\nSe preguntó a: {universo}.")
+            else:
+                self.lbl_var_desc.setText(desc)
+        self._actualizar_ayuda_variable(var)
 
         # Aviso de tipo desconocido: es la única vía por la que el usuario puede
         # elegir una agregación sin sentido para la variable, así que se dice.
@@ -1016,6 +1100,14 @@ class CensosBOPanel(QDockWidget):
         # Clasificación: solo cuando el mapa es graduado (incluye porcentaje y SQL).
         graduado = self._mapa_es_graduado()
         self.combo_clasificacion.setVisible(graduado)
+
+        # Misma condición lógica que decide si la densidad se aplica: un solo sitio.
+        puede_densidad = self._puede_densidad()
+        self.chk_densidad.setVisible(puede_densidad)
+        if not puede_densidad and self.chk_densidad.isChecked():
+            self.chk_densidad.blockSignals(True)
+            self.chk_densidad.setChecked(False)
+            self.chk_densidad.blockSignals(False)
         self._lbl_clasificacion.setVisible(graduado)
 
         # Categoría: solo con "Porcentaje" sobre una categórica, y con opciones.
@@ -1063,6 +1155,102 @@ class CensosBOPanel(QDockWidget):
         self._agg_result = None
         self.btn_generar.setEnabled(False)
         self._update_button_emphasis()
+
+    # ── Densidad (valor por km²) ──────────────────────────────────────────────
+
+    def _superficies(self):
+        """{geo_code: km²} del nivel actual, o {} si no hay superficies."""
+        nivel = self._nivel()
+        if nivel not in ("departamento", "municipio"):
+            return {}
+        from ..core.layer_builder import geo_superficies
+        return geo_superficies(nivel)
+
+    def _actualizar_ayuda_variable(self, var):
+        """Pone en el tooltip del selector la documentación del INE de la variable.
+
+        Es donde cabe: la definición oficial, la pregunta tal como se leyó en campo y
+        la regla de las variables derivadas suman cientos de caracteres, imposibles
+        de meter en un panel de 300 px. Cuando la variable no está documentada —las
+        fichas, o las claves geográficas— se deja la ayuda general del campo, que es
+        lo que había antes.
+        """
+        ayuda = ""
+        if var and var not in NO_VAR and var != CONTEO_KEY:
+            from ..core.docs_vars import texto_ayuda
+            try:
+                anio = int(self.combo_anio.currentText())
+            except (TypeError, ValueError):
+                anio = None
+            if anio:
+                ayuda = texto_ayuda(anio, var, self.combo_tabla.currentData())
+        texto = f"{var}\n\n{ayuda}" if ayuda else AYUDA["variable"]
+        self.combo_variable.setToolTip(texto)
+        # La propiedad la lee la prueba headless y documenta qué ayuda tiene el campo.
+        self.combo_variable.setProperty("ayuda", texto)
+
+    def _puede_densidad(self):
+        """Si la densidad es aplicable con la selección actual.
+
+        Solo sobre magnitudes (conteo y suma) y donde hay superficie declarada:
+        departamento y municipio. En manzano/comunidad no la hay —y las comunidades
+        son puntos—, y en el modo SQL el plugin no sabe qué calcula la expresión.
+        """
+        return (
+            not self.chk_avanzado.isChecked()
+            and (self.combo_agg.currentData() or "") in ("__count__", "sum")
+            and self._nivel() in ("departamento", "municipio")
+            and bool(self._superficies())
+        )
+
+    def _densidad_activa(self):
+        """Si el resultado debe mostrarse por km².
+
+        Se apoya en `_puede_densidad()` y **no** en `isVisible()` de la casilla: un
+        widget cuya ventana no está mostrada —panel acoplado y colapsado, o QGIS en
+        headless— devuelve False aunque el campo esté a la vista para el usuario, y
+        la densidad se apagaba sin que nada lo dijera.
+        """
+        return self._puede_densidad() and self.chk_densidad.isChecked()
+
+    def _a_densidad(self, df, ctx):
+        """Divide `valor` entre los km² de cada unidad. Devuelve un DataFrame nuevo.
+
+        Las unidades sin superficie conocida quedan con valor nulo en vez de con un
+        número inventado: en el mapa salen sin color y el resumen las cuenta como lo
+        que son, casos sin dato.
+        """
+        superficies = self._superficies()
+        if not superficies:
+            return df
+        salida = df.copy()
+        km2 = salida["geo_code"].astype(str).map(superficies)
+        salida["valor"] = salida["valor"] / km2
+        return salida
+
+    def _referencia_densidad(self, national, ctx):
+        """El valor de referencia, también por km² del territorio que lo acota."""
+        if national is None:
+            return None
+        superficies = self._superficies()
+        if not superficies:
+            return national
+        if ctx.get("municipio"):
+            km2 = superficies.get(str(ctx["municipio"]))
+        elif ctx.get("depto"):
+            # A nivel municipal las claves son de 6 dígitos: suma las del depto.
+            prefijo = str(ctx["depto"]).zfill(2)
+            km2 = sum(v for k, v in superficies.items() if k.startswith(prefijo))
+        else:
+            km2 = sum(superficies.values())
+        return national / km2 if km2 else None
+
+    def _on_densidad_toggled(self):
+        """Repinta el resumen sin reconsultar: la densidad es post-proceso."""
+        self._sync_controls()
+        if (self._agg_result and self._agg_result[0] == self._params_key()
+                and self._resultado_crudo is not None):
+            self._show_result_summary(self._resultado_crudo, self._agg_result[2])
 
     def _geo_filtros(self, nivel):
         """(departamento, municipio, area) según el nivel y los combos visibles."""
@@ -1183,6 +1371,10 @@ class CensosBOPanel(QDockWidget):
             self._show_stats_hint("La consulta no devolvió datos.")
             return
         self._agg_result = (ctx["key"], df, ctx)
+        # Se guarda el resultado crudo (df + referencia + cobertura) para poder
+        # repintar el resumen cuando cambia algo que es puro post-proceso, como la
+        # densidad, sin volver a consultar.
+        self._resultado_crudo = result
         self._show_result_summary(result, ctx)
         self.btn_generar.setEnabled(True)
         # Hay resultado: el siguiente paso es dibujar el mapa.
@@ -1407,22 +1599,20 @@ class CensosBOPanel(QDockWidget):
         catalogo = fichas.catalogo(tabla)
         self._var_descriptions = {r["variable"]: r["etiqueta"] for r in catalogo}
         self._var_types = {r["variable"]: r["tipo"] for r in catalogo}
-
-        current = self.combo_variable.currentData()
-        self.combo_variable.blockSignals(True)
-        self.combo_variable.clear()
-        if not catalogo:
-            self.combo_variable.addItem(
-                "⚠ Falta el catálogo de indicadores (data/dicc_fichas.csv)",
-                "__error__")
-        for r in catalogo:
-            bloque = fichas.BLOQUES.get(r["bloque"], r["bloque"])
-            self.combo_variable.addItem(f"{bloque} · {r['etiqueta']}", r["variable"])
-        idx = self.combo_variable.findData(current)
-        if idx >= 0:
-            self.combo_variable.setCurrentIndex(idx)
-        self.combo_variable.blockSignals(False)
-        self._on_variable_changed()
+        # Las fichas son agregados del INE por unidad censal, no preguntas del
+        # cuestionario: no tienen universo poblacional que declarar.
+        self._var_universos = {}
+        # El selector de agrupación se reutiliza: en los microdatos filtra por tema
+        # del catálogo del INE y aquí por **bloque** de la ficha, que es la misma
+        # idea y lo que ya se ve en cada etiqueta. Con 245 opciones, tenerlo solo
+        # como prefijo de texto no ayudaba a encontrar nada.
+        self._var_temas = {r["variable"]: (r.get("bloque") or "",
+                                           fichas.bloque_etiqueta(r))
+                           for r in catalogo if r.get("bloque")}
+        self._var_columnas = [r["variable"] for r in catalogo]
+        self._cols_error = not catalogo
+        self._update_tema_options()
+        self._populate_variables_catalogo(catalogo)
 
     def _start_cols_worker(self, path_or_url, remote):
         """Lanza la lectura del schema. El worker en vuelo no se aborta (no se
@@ -1434,13 +1624,12 @@ class CensosBOPanel(QDockWidget):
         w = ColumnsWorker(path_or_url, anio=anio, tabla=tabla, remote=remote,
                           token=self._cols_token)
         w.done.connect(
-            lambda cols, descs, types, tk: self._on_columns_loaded(
-                cols, descs, types, tk, anio, tabla)
+            lambda meta, tk: self._on_columns_loaded(meta, tk, anio, tabla)
         )
         self._cols_worker = w
         w.start()
 
-    def _on_columns_loaded(self, columns, descriptions, types, token, anio, tabla):
+    def _on_columns_loaded(self, meta, token, anio, tabla):
         if token != self._cols_token:
             return                      # lectura de una selección ya abandonada
         if int(self.combo_anio.currentText()) != anio:
@@ -1448,34 +1637,112 @@ class CensosBOPanel(QDockWidget):
         if self.combo_tabla.currentData() != tabla:
             return
 
-        self._var_descriptions = descriptions
-        self._var_types = types
+        columns = meta.get("cols") or []
+        self._var_descriptions = meta.get("descs") or {}
+        self._var_types = meta.get("types") or {}
+        self._var_universos = meta.get("universos") or {}
+        self._var_temas = meta.get("temas") or {}
+        # Se guardan para poder repoblar el selector al cambiar de tema sin
+        # volver a leer el schema remoto.
+        self._var_columnas = [c for c in columns if not _is_geo_or_technical(c)]
+        self._cols_error = not columns
 
+        self._update_tema_options()
+        self._populate_variables_microdatos()
+        self._on_variable_changed()
+
+    def _update_tema_options(self):
+        """Llena el selector de tema con los que existen en las variables actuales.
+
+        Solo se ofrecen temas que tengan al menos una variable a la vista, para no
+        enseñar una opción que deja la lista vacía. Se conserva el tema elegido si
+        sigue estando disponible al cambiar de año o tabla.
+        """
+        actual = self.combo_tema.currentData()
+        temas = {}
+        for var in self._var_columnas:
+            entrada = self._var_temas.get(var)
+            if entrada:
+                temas[entrada[0]] = entrada[1]
+
+        self.combo_tema.blockSignals(True)
+        self.combo_tema.clear()
+        self.combo_tema.addItem(TODOS_TEMAS_LABEL, TODOS_TEMAS)
+        for slug, etiqueta in sorted(temas.items(), key=lambda kv: kv[1]):
+            n = sum(1 for v in self._var_columnas
+                    if (self._var_temas.get(v) or (None,))[0] == slug)
+            self.combo_tema.addItem(f"{etiqueta} ({n})", slug)
+        idx = self.combo_tema.findData(actual)
+        self.combo_tema.setCurrentIndex(max(idx, 0))
+        self.combo_tema.blockSignals(False)
+        self._temas_disponibles = bool(temas)
+
+    def _populate_variables_microdatos(self):
+        """Llena el selector de variables, acotado al tema elegido."""
+        tema = self.combo_tema.currentData() or TODOS_TEMAS
+        current = self.combo_variable.currentData()
+
+        self.combo_variable.blockSignals(True)
+        self.combo_variable.clear()
+        self.combo_variable.addItem(CONTEO_LABEL, CONTEO_KEY)
         # Columnas vacías = el worker falló (un parquet real siempre tiene
         # columnas): casi siempre la lectura remota del schema no llegó a GitHub
         # (sin internet, proxy/firewall, o timeout). Mostramos el error en el
         # propio combo en vez de dejarlo en "Cargando…" o vacío y mudo. El conteo
         # de registros se conserva: no depende del diccionario y sigue sirviendo.
-        current = self.combo_variable.currentData()
-        self.combo_variable.blockSignals(True)
-        self.combo_variable.clear()
-        self.combo_variable.addItem(CONTEO_LABEL, CONTEO_KEY)
-        if not columns:
+        if self._cols_error:
             self.combo_variable.addItem(
                 "⚠ No se pudieron cargar las variables — revisa tu conexión",
                 "__error__")
-        for col in columns:
-            if not _is_geo_or_technical(col):
-                desc = descriptions.get(col)
-                abbr = TIPO_ABBR.get((types.get(col) or "").lower())
-                name = f"{col} ({abbr})" if abbr else col
-                label = f"{name} — {desc}" if desc else name
-                self.combo_variable.addItem(label, col)
+        for col in self._var_columnas:
+            if tema != TODOS_TEMAS:
+                entrada = self._var_temas.get(col)
+                if not entrada or entrada[0] != tema:
+                    continue
+            desc = self._var_descriptions.get(col)
+            abbr = TIPO_ABBR.get((self._var_types.get(col) or "").lower())
+            name = f"{col} ({abbr})" if abbr else col
+            self.combo_variable.addItem(f"{name} — {desc}" if desc else name, col)
 
         idx = self.combo_variable.findData(current)
         self.combo_variable.setCurrentIndex(max(idx, 0))
         self.combo_variable.blockSignals(False)
+
+    def _populate_variables_catalogo(self, catalogo):
+        """Llena el selector con los indicadores de ficha, acotado al bloque elegido.
+
+        Al filtrar por un bloque se **quita su nombre del prefijo**: repetir
+        «Servicios básicos ·» en cada opción cuando el selector de arriba ya lo dice
+        solo gasta el ancho del panel, que es escaso.
+        """
+        bloque = self.combo_tema.currentData() or TODOS_TEMAS
+        current = self.combo_variable.currentData()
+
+        self.combo_variable.blockSignals(True)
+        self.combo_variable.clear()
+        if not catalogo:
+            self.combo_variable.addItem(
+                "⚠ Falta el catálogo de indicadores (data/dicc_fichas.csv)",
+                "__error__")
+        for r in catalogo:
+            if bloque != TODOS_TEMAS and (r.get("bloque") or "") != bloque:
+                continue
+            etiqueta = (r["etiqueta"] if bloque != TODOS_TEMAS
+                        else f"{fichas.bloque_etiqueta(r)} · {r['etiqueta']}")
+            self.combo_variable.addItem(etiqueta, r["variable"])
+        idx = self.combo_variable.findData(current)
+        if idx >= 0:
+            self.combo_variable.setCurrentIndex(idx)
+        self.combo_variable.blockSignals(False)
         self._on_variable_changed()
+
+    def _on_tema_changed(self):
+        tabla = self.combo_tabla.currentData()
+        if tabla in fichas.TABLAS:
+            self._populate_variables_catalogo(fichas.catalogo(tabla))
+        else:
+            self._populate_variables_microdatos()
+            self._on_variable_changed()
 
     # ─────────────────────────── Resumen del resultado ───────────────────────
 
@@ -1504,6 +1771,12 @@ class CensosBOPanel(QDockWidget):
         cobertura = (result.get("cobertura") if isinstance(result, dict)
                      else None) or (None, None)
 
+        # La densidad se aplica aquí y no en la consulta: es dividir el valor ya
+        # agregado por la superficie, así que activarla no cuesta otra consulta.
+        if self._densidad_activa():
+            df = self._a_densidad(df, ctx)
+            national = self._referencia_densidad(national, ctx)
+
         self._clear_stat_bars()
         self.lbl_stats_hint.setVisible(False)
         self.stats_bars_widget.setVisible(True)
@@ -1514,8 +1787,9 @@ class CensosBOPanel(QDockWidget):
         unidad_sg = UNIDAD_SG.get(nivel, "municipio")
         unidad_pl = UNIDAD_PL.get(nivel, "municipios")
 
-        # Cuántas de estas unidades podrá pintar el mapa. El GeoJSON empaquetado
-        # no trae 4 municipios de creación reciente, y antes el resumen decía 343
+        # Cuántas de estas unidades podrá pintar el mapa. La cartografía es la
+        # división municipal vigente, así que un censo anterior puede traer códigos
+        # que ya no existen; antes el resumen decía 343
         # mientras el mapa dibujaba 339, sin avisar.
         n_map, sin_geom = self._cobertura_del_mapa(df, ctx)
         self.lbl_total_caption.setText(f"Unidades ({unidad_pl}):")
@@ -1542,6 +1816,14 @@ class CensosBOPanel(QDockWidget):
             else:
                 ref_caption = "Nacional"
             self._add_kv_row(ref_caption, natlbl)
+
+        # A quién se le hizo la pregunta. Lo dice el diccionario del INE
+        # (censosbo 1.5.0+) y va antes de las cifras a propósito: un promedio de
+        # escolaridad "de la población" que en realidad es de mayores de 19 años se
+        # lee distinto. Solo aparece cuando el universo no es el obvio.
+        universo = self._universo_del_resultado(ctx)
+        if universo:
+            self._add_note(f"Pregunta aplicada a: {universo}.")
 
         # Base de cálculo del porcentaje: es el dato que evita malinterpretar un
         # indicador cuya pregunta solo aplica a un subgrupo del censo.
@@ -1671,6 +1953,26 @@ class CensosBOPanel(QDockWidget):
 
     # ── Helpers del resumen ───────────────────────────────────────────────────
 
+    # Universos que no aportan nada al lector: son el caso por omisión de su tabla,
+    # así que anunciarlos solo añade ruido a cada resultado.
+    _UNIVERSOS_OBVIOS = frozenset({
+        "todas las personas", "todas las viviendas", "hogares",
+    })
+
+    def _universo_del_resultado(self, ctx):
+        """Universo de la variable consultada, si merece declararse.
+
+        Devuelve `None` cuando no hay dato (diccionarios anteriores a censosbo
+        1.5.0, fichas, o el modo SQL, donde la expresión puede tocar varias
+        variables y el plugin no puede saber sobre quién acaba calculando).
+        """
+        if ctx.get("sql_libre"):
+            return None
+        universo = self._var_universos.get(ctx.get("variable"))
+        if not universo or universo in self._UNIVERSOS_OBVIOS:
+            return None
+        return universo
+
     def _var_label(self, var, max_chars=52):
         """Nombre legible de una variable, con el nombre técnico entre paréntesis.
 
@@ -1697,6 +1999,10 @@ class CensosBOPanel(QDockWidget):
     def _indicator_title(self, ctx):
         nivel = ctx["nivel"]
         unidad = UNIDAD_SG.get(nivel, "municipio")
+        if self._densidad_activa():
+            # La densidad cambia lo que el número significa, así que tiene que
+            # verse en el título y no solo en la casilla.
+            unidad = f"km² ({unidad})"
         if ctx.get("sql_libre"):
             return f"Expresión SQL — por {unidad}"
         var = ctx["variable"]
@@ -1835,6 +2141,8 @@ class CensosBOPanel(QDockWidget):
                 "Pulsa '1 · Consultar' primero (o los parámetros cambiaron).")
             return
         _, df, ctx = self._agg_result
+        if self._densidad_activa():
+            df = self._a_densidad(df, ctx)
         clasificacion = self.combo_clasificacion.currentData() or "jenks"
         self._build_layer(df, ctx, clasificacion)
 
@@ -1851,6 +2159,8 @@ class CensosBOPanel(QDockWidget):
                 "pct_category": "pct", "total": "tot", "porcentaje": "pct",
             }.get(agg, agg)
             base = f"{(variable or 'var')[:14]}_{agg_tag}"
+            if self._densidad_activa():
+                base += "_km2"       # dos capas del mismo dato no deben confundirse
         geo_tag = ""
         if ctx.get("municipio"):
             geo_tag = f"_mun{ctx['municipio']}"

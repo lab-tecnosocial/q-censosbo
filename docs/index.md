@@ -24,6 +24,13 @@ te avisa de las actualizaciones.
   intraurbanos de a un municipio.
 - **Reconoce el tipo de variable** (categórica o numérica) desde el diccionario oficial y
   muestra **etiquetas legibles** (p. ej. `1 → Quechua`) en vez de códigos.
+- **Filtro por tema y universo de la pregunta**: las variables se acotan por tema del catálogo del
+  INE —o por bloque en las fichas—, y el plugin dice a quién se le hizo cada pregunta (`personas de
+  7 años o más`), que es lo que evita leer un porcentaje sobre el denominador equivocado. El tooltip
+  trae la documentación oficial de 445 variables: qué mide, la pregunta en campo y, en las
+  derivadas, cómo se calcularon.
+- **Densidad por km²**: una casilla convierte cualquier conteo o suma en densidad, con la superficie
+  que declara la cartografía del censo.
 - **Mapas coropléticos** con leyenda apropiada y un **resumen del resultado** que indica el
   valor de referencia del territorio, las clases que tendrá el mapa y lo que queda fuera.
 

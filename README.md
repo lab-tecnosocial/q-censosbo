@@ -23,6 +23,10 @@ pesados. Basado en el trabajo del paquete de R [**censosbo**](https://github.com
   194 indicadores de la ficha del INE (245 opciones con las que suman ambos sexos), de a un
   municipio.
 - Reconoce variables categóricas y numéricas y muestra etiquetas legibles.
+- Acota las variables por **tema** del catálogo del INE (o por **bloque** en las fichas) y declara
+  **a quién se le hizo cada pregunta**, que es lo que decide si un resultado se puede leer como «de
+  la población». El tooltip trae la documentación oficial: qué mide y la pregunta tal como se leyó.
+- Convierte cualquier conteo o suma en **densidad por km²** con una casilla.
 - Genera mapas coropléticos con leyenda apropiada y un resumen que anticipa las clases del mapa
   y declara lo que queda fuera del cálculo.
 

@@ -2,7 +2,7 @@
 Datos agregados del CPV-2024 por manzano urbano y comunidad rural (las "fichas").
 
 Es el nivel geográfico más fino del censo: 268.604 unidades censales frente a los
-339 municipios del resto del plugin. Viven en un release aparte
+343 municipios del resto del plugin. Viven en un release aparte
 (`data-fichas-v1.0.0`) y su modelo es distinto al de los microdatos:
 
   - `unidad.parquet` — las 268.604 unidades con población, viviendas y si el INE
@@ -33,25 +33,6 @@ TABLAS = ("fichas", "unidades")
 # Mismo dominio que la variable `area` de los microdatos (y que el paquete R).
 AREAS = {"urbana": 1, "rural": 2}
 
-# Nombre legible de cada bloque temático, para agrupar el selector de variables.
-BLOQUES = {
-    "poblacion":    "Población",
-    "educacion":    "Educación",
-    "salud_lugar":  "Salud · atención",
-    "salud_seguro": "Salud · seguro",
-    "nacimiento":   "Lugar de nacimiento",
-    "residencia":   "Residencia habitual",
-    "ocupacion":    "Ocupación",
-    "actividad":    "Actividad económica",
-    "vivienda":     "Vivienda",
-    "servicios":    "Servicios básicos",
-    "tic":          "TIC",
-    "material":     "Materiales",
-    "hacinamiento": "Hacinamiento",
-    "hogar":        "Tipo de hogar",
-    "unidad":       "Unidad censal",
-}
-
 DICC_PATH = Path(__file__).parent.parent / "data" / "dicc_fichas.csv"
 
 _catalogo_cache = {}
@@ -78,6 +59,17 @@ def catalogo(tabla):
         filas = []
     _catalogo_cache[tabla] = filas
     return filas
+
+
+def bloque_etiqueta(fila):
+    """Nombre legible del bloque temático de un indicador.
+
+    Sale del propio diccionario (`bloque_etiqueta`, que publica censosbo desde
+    1.5.0). Antes había un dict escrito a mano aquí, que se quedó desincronizado en
+    dos bloques respecto a las etiquetas oficiales. Se conserva el respaldo al slug
+    por si se lee un CSV generado antes de ese cambio.
+    """
+    return (fila.get("bloque_etiqueta") or fila.get("bloque") or "").strip()
 
 
 def indicador(tabla, variable):

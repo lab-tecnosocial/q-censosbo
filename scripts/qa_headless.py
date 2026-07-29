@@ -83,6 +83,11 @@ import qcensosbo.panel.dock_panel as dp                               # noqa: E4
 
 am.get_var_descriptions = lambda a, t=None: FX["descs"].get((a, t), {})
 am.get_var_types = lambda a, t=None: FX["types"].get((a, t), {})
+# Universos y temas llegaron con censosbo 1.5.0. Se leen del fixture si está
+# regenerado y, si no, quedan vacíos: el panel tiene que funcionar igual con un
+# diccionario antiguo, y así también se prueba ese camino.
+am.get_var_universos = lambda a, t=None: FX.get("universos", {}).get((a, t), {})
+am.get_var_temas = lambda a, t=None: FX.get("temas", {}).get((a, t), {})
 _labels_reales = am.get_value_labels
 
 
@@ -97,12 +102,16 @@ dp.duckdb_available = lambda: True
 dp.get_value_labels = _labels
 dp.get_var_descriptions = am.get_var_descriptions
 dp.get_var_types = am.get_var_types
+dp.get_var_universos = am.get_var_universos
+dp.get_var_temas = am.get_var_temas
 dp.variable_coverage = lambda *a, **k: (None, None)
 dp.distinct_values = lambda urls, v, **k: []
 
 
 class ColumnsWorkerFake(QThread):
-    done = pyqtSignal(list, dict, dict, int)
+    # Un solo dict, igual que el worker real: el diccionario de censosbo crece y
+    # antes cada dato nuevo cambiaba la firma de la señal.
+    done = pyqtSignal(dict, int)
 
     def __init__(self, path_or_url, anio, tabla=None, remote=False, token=0):
         super().__init__()
@@ -110,9 +119,13 @@ class ColumnsWorkerFake(QThread):
 
     def start(self):
         anio, tabla, token = self.args
-        self.done.emit(FX["cols"].get((anio, tabla), []),
-                       FX["descs"].get((anio, tabla), {}),
-                       FX["types"].get((anio, tabla), {}), token)
+        self.done.emit({
+            "cols":      FX["cols"].get((anio, tabla), []),
+            "descs":     FX["descs"].get((anio, tabla), {}),
+            "types":     FX["types"].get((anio, tabla), {}),
+            "universos": FX.get("universos", {}).get((anio, tabla), {}),
+            "temas":     FX.get("temas", {}).get((anio, tabla), {}),
+        }, token)
 
     def isRunning(self):
         return False
@@ -511,7 +524,7 @@ try:
     captura("05_ranking")
 
     # ─────────────────────────────────────────────────────────────────────────
-    seccion("J · Municipal: se declara lo que no tiene geometría")
+    seccion("J · Municipal: cartografía completa, y red de seguridad si no lo fuera")
     sel(panel.combo_nivel, "municipio")
     sel(panel.combo_depto, None)
     sel(panel.combo_variable, "p26_edad")
@@ -520,8 +533,11 @@ try:
     textos = resumen_textos()
     check(panel.lbl_total.text() == "343",
           "el resumen cuenta los 343 municipios con dato", panel.lbl_total.text())
-    check(any("sin geometría" in t for t in textos),
-          "y avisa de los que no se podrán pintar",
+    # Desde censosbo 1.6.0 la cartografía trae los 343, así que en 2024 no debe
+    # aparecer ningún aviso de cobertura: si aparece, algo se rompió al regenerar
+    # los GeoJSON (ver scripts/build_geo.R).
+    check(not any("sin geometría" in t for t in textos),
+          "y NO avisa de cobertura: los 343 tienen polígono",
           str([t for t in textos if "geometr" in t]))
     QgsProject.instance().removeAllMapLayers()
     MSGS.clear()
@@ -529,15 +545,33 @@ try:
     capas = list(QgsProject.instance().mapLayers().values())
     check(len(capas) == 1, "se crea una capa", str(len(capas)))
     if capas:
-        check(capas[0].featureCount() == 339,
-              "con los 339 municipios que sí tienen polígono",
-              str(capas[0].featureCount()))
-    check(MSGS and "339 unidades dibujadas" in MSGS[-1][1],
+        check(capas[0].featureCount() == 343,
+              "con los 343 municipios", str(capas[0].featureCount()))
+    check(MSGS and "343 unidades dibujadas" in MSGS[-1][1],
           "el mensaje informa del conteo real de la capa",
           str(MSGS[-1:] and MSGS[-1][1]))
-    check(MSGS and "no tienen geometría" in MSGS[-1][1],
-          "y de los resultados sin geometría")
     captura("06_municipal")
+
+    # La red de seguridad se prueba por INYECCIÓN, no esperando que a los datos les
+    # falten municipios: los censos anteriores a 2012 usan otra división y sus
+    # códigos pueden no existir en la actual, y eso hay que seguir declarándolo.
+    # El panel lo importa dentro de la función, así que hay que parchear el módulo
+    # de origen, no el atributo de dock_panel.
+    import qcensosbo.core.layer_builder as lb
+    _cobertura_real = lb.cobertura_geo
+    lb.cobertura_geo = lambda codigos, nivel, departamento=None: (
+        max(len(set(map(str, codigos))) - 3, 0), ["999901", "999902", "999903"])
+    try:
+        consultar()
+        textos = resumen_textos()
+        check(any("sin geometría" in t for t in textos),
+              "si faltara cobertura, el resumen lo declara",
+              str([t for t in textos if "geometr" in t])[:90])
+        check(any("999901" in t for t in textos),
+              "y nombra los códigos que se quedarían sin pintar")
+    finally:
+        lb.cobertura_geo = _cobertura_real
+    consultar()          # deja el estado limpio para las secciones siguientes
 
     # ─────────────────────────────────────────────────────────────────────────
     seccion("K · Leyenda del mapa sin clases repetidas ni vacías")
@@ -760,6 +794,265 @@ try:
               f"fmt_num({valor}) = {esperado}", dp.fmt_num(valor))
     check(dp.fmt_num(49.36, pct=True) == "49,4%",
           "porcentaje con coma decimal", dp.fmt_num(49.36, pct=True))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    seccion("Q · El universo de la pregunta (censosbo 1.5.0)")
+    # El diccionario del INE dice a quién se le hizo cada pregunta. Sin esto, un
+    # promedio "de la población" que en realidad es de mayores de 19 años se lee
+    # mal, que es el error más común del análisis censal.
+    u = am.universo_legible
+    for slug, esperado in [
+        ("personas_7_mas",  "personas de 7 años o más"),
+        ("personas_19_mas", "personas de 19 años o más"),
+        ("mujeres_15_49",   "mujeres de 15 a 49 años"),
+        ("todas_personas",  "todas las personas"),
+    ]:
+        check(u(slug) == esperado, f"{slug} → {esperado}", u(slug))
+    # Un universo que el INE añada mañana tiene que salir legible sin tocar código.
+    check(u("hombres_18_mas") == "hombres de 18 años o más",
+          "un universo nuevo se deriva por patrón", u("hombres_18_mas"))
+    check(u(None) is None and u("") is None,
+          "sin universo devuelve None (diccionario anterior a 1.5.0)")
+
+    universos = FX.get("universos", {}).get((2024, "personas"), {})
+    if universos:
+        panel.combo_anio.setCurrentText("2024")
+        sel(panel.combo_tabla, "personas")
+        bombear()
+        # Una variable con universo restringido: debe anunciarse.
+        restringida = next(
+            (v for v, txt in universos.items() if "años o más" in txt), None)
+        check(restringida is not None,
+              "hay variables con universo restringido en 2024",
+              str(restringida))
+        if restringida:
+            sel(panel.combo_variable, restringida)
+            bombear()
+            desc = panel.lbl_var_desc.text()
+            check("Se preguntó a:" in desc,
+                  f"el panel declara el universo de {restringida}",
+                  desc.replace("\n", " · ")[:90])
+            consultar()
+            check(any("Pregunta aplicada a:" in t for t in resumen_textos()),
+                  "y el resumen del resultado también lo dice")
+        # Las obvias no ensucian: "todas las personas" no se anuncia.
+        obvia = next(
+            (v for v, txt in universos.items() if txt == "todas las personas"), None)
+        if obvia:
+            sel(panel.combo_variable, obvia)
+            bombear()
+            check("Se preguntó a:" not in panel.lbl_var_desc.text(),
+                  "un universo obvio no se anuncia (sería ruido)",
+                  panel.lbl_var_desc.text()[:70])
+    else:
+        print("    (el fixture no trae universos: regenéralo para probar esto)")
+
+    # Las fichas son agregados del INE por unidad, no preguntas: sin universo.
+    sel(panel.combo_tabla, "fichas")
+    bombear()
+    check(panel._var_universos == {},
+          "las fichas no declaran universo (no son preguntas)")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    seccion("T · Documentación conceptual del INE en el tooltip")
+    from qcensosbo.core import docs_vars
+    panel.combo_anio.setCurrentText("2024")
+    sel(panel.combo_tabla, "personas")
+    bombear()
+    sel(panel.combo_variable, "p26_edad")
+    bombear()
+    ayuda = panel.combo_variable.toolTip()
+    check("edad" in ayuda.lower(), "el tooltip trae la definición del INE",
+          ayuda.replace("\n", " ")[:80])
+    check("Pregunta en campo" in ayuda,
+          "y la pregunta tal como se leyó en campo")
+
+    # Las derivadas explican cómo se construyeron: es lo que evita malinterpretarlas.
+    doc = docs_vars.documentacion(2024, "nivel_edu", "personas")
+    check(doc is not None, "nivel_edu está documentada")
+    if doc:
+        check(bool((doc.get("universo_literal") or "").strip()),
+              "con su universo redactado en palabras",
+              (doc.get("universo_literal") or "")[:60])
+
+    # Sin documentación se conserva la ayuda general del campo, no un tooltip vacío.
+    sel(panel.combo_variable, dp.CONTEO_KEY)
+    bombear()
+    check(panel.combo_variable.toolTip() == dp.AYUDA["variable"],
+          "el conteo de registros mantiene la ayuda general del campo")
+    sel(panel.combo_tabla, "fichas")
+    bombear()
+    primera = panel.combo_variable.itemData(0)
+    sel(panel.combo_variable, primera)
+    bombear()
+    check(panel.combo_variable.toolTip() == dp.AYUDA["variable"],
+          "y los indicadores de ficha también (no son preguntas del cuestionario)")
+    check(docs_vars.texto_ayuda(2024, "no_existe_esta", "personas") == "",
+          "una variable no documentada devuelve cadena vacía, no un error")
+    sel(panel.combo_tabla, "personas")
+    bombear()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    seccion("S · Densidad por km²")
+    from qcensosbo.core.layer_builder import geo_superficies
+    sup_dep = geo_superficies("departamento")
+    check(len(sup_dep) == 9, f"hay superficie de los 9 departamentos ({len(sup_dep)})")
+    check(len(geo_superficies("municipio")) == 343,
+          "y de los 343 municipios", str(len(geo_superficies("municipio"))))
+
+    panel.combo_anio.setCurrentText("2024")
+    sel(panel.combo_tabla, "personas")
+    sel(panel.combo_nivel, "departamento")
+    sel(panel.combo_variable, dp.CONTEO_KEY)
+    bombear()
+    check(visible(panel.chk_densidad), "la casilla aparece con Conteo")
+    # El estado sale de la condición lógica, no de isVisible(): un panel acoplado y
+    # colapsado —o QGIS headless— devuelve isVisible() False aunque el campo esté a
+    # la vista, y la densidad se apagaba sin decir nada.
+    check(panel._puede_densidad() and not panel.chk_densidad.isVisible(),
+          "el estado no depende de isVisible() del widget")
+
+    consultar()
+    total_sin = float(panel._agg_result[1]["valor"].sum())
+    panel.chk_densidad.setChecked(True)
+    bombear()
+    textos = resumen_textos()
+    check(any("km²" in t for t in textos),
+          "el título dice que el valor es por km²",
+          str([t for t in textos if "km" in t])[:80])
+
+    # El valor de un departamento concreto tiene que ser población / km².
+    df = panel._a_densidad(panel._agg_result[1], panel._agg_result[2])
+    fila = df[df["geo_code"] == "02"].iloc[0]          # La Paz
+    crudo = panel._agg_result[1]
+    poblacion = float(crudo[crudo["geo_code"] == "02"]["valor"].iloc[0])
+    esperado = poblacion / sup_dep["02"]
+    check(abs(float(fila["valor"]) - esperado) < 1e-6,
+          f"La Paz = {esperado:.1f} hab/km²", f"{float(fila['valor']):.4f}")
+    check(float(fila["valor"]) < poblacion,
+          "y es mucho menor que el conteo bruto")
+
+    # Es post-proceso: activar la densidad NO debe invalidar la consulta.
+    check(panel.btn_generar.isEnabled(),
+          "activar la densidad no obliga a volver a consultar")
+    check(panel._agg_result is not None and
+          abs(float(panel._agg_result[1]["valor"].sum()) - total_sin) < 1e-6,
+          "y el resultado guardado sigue siendo el crudo, sin dividir")
+
+    # No tiene sentido sobre promedios ni porcentajes: la casilla desaparece.
+    sel(panel.combo_variable, "p26_edad")
+    sel(panel.combo_agg, "mean")
+    bombear()
+    check(not visible(panel.chk_densidad), "con Media la casilla no aparece")
+    check(not panel.chk_densidad.isChecked(),
+          "y se desmarca sola, para no arrastrar un estado imposible")
+
+    # Tampoco en manzano/comunidad: no hay superficie declarada de las unidades.
+    sel(panel.combo_tabla, "fichas")
+    bombear()
+    check(not visible(panel.chk_densidad),
+          "en manzano/comunidad no se ofrece (sin superficie por unidad)")
+    sel(panel.combo_tabla, "personas")
+    sel(panel.combo_nivel, "departamento")
+    sel(panel.combo_variable, dp.CONTEO_KEY)
+    bombear()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    seccion("R · Filtro por tema del catálogo del INE")
+    panel.combo_anio.setCurrentText("2024")
+    sel(panel.combo_tabla, "personas")
+    bombear()
+    temas = opciones(panel.combo_tema)
+    check(visible(panel.combo_tema), "el campo Tema se ve cuando hay temas")
+    check(panel.combo_tema.itemData(0) == dp.TODOS_TEMAS,
+          "la primera opción es «Todos los temas» (sin filtro)")
+    check(len(temas) > 5, f"ofrece los temas del censo ({len(temas) - 1})",
+          "; ".join(temas[1:4]))
+    # `opciones()` devuelve los datos; el conteo va en el texto visible.
+    textos_tema = [panel.combo_tema.itemText(i)
+                   for i in range(1, panel.combo_tema.count())]
+    check(all(t.rstrip().endswith(")") for t in textos_tema),
+          "cada tema dice cuántas variables tiene",
+          textos_tema[0] if textos_tema else "")
+
+    todas = len(opciones(panel.combo_variable))
+    # Un tema concreto tiene que reducir la lista, y nunca quedarse vacío: solo se
+    # ofrecen temas con al menos una variable a la vista.
+    slug_edu = next((panel.combo_tema.itemData(i)
+                     for i in range(panel.combo_tema.count())
+                     if "ducaci" in panel.combo_tema.itemText(i)), None)
+    check(slug_edu is not None, "hay un tema de educación", str(slug_edu))
+    if slug_edu:
+        sel(panel.combo_tema, slug_edu)
+        bombear()
+        filtradas = opciones(panel.combo_variable)
+        check(1 < len(filtradas) < todas,
+              f"filtrar por tema reduce la lista ({todas} → {len(filtradas)})")
+        check(filtradas[0] == dp.CONTEO_KEY,
+              "el conteo de registros sigue disponible en cualquier tema")
+        # Todas las que quedan pertenecen de verdad al tema.
+        datos = [panel.combo_variable.itemData(i)
+                 for i in range(1, panel.combo_variable.count())]
+        check(all((panel._var_temas.get(v) or ("",))[0] == slug_edu for v in datos),
+              "y todas las variables listadas son de ese tema")
+
+        # Volver a «Todos» restaura la lista completa.
+        sel(panel.combo_tema, dp.TODOS_TEMAS)
+        bombear()
+        check(len(opciones(panel.combo_variable)) == todas,
+              "«Todos los temas» restaura la lista completa")
+
+    # Un año cuyo diccionario tenga menos temas no debe dejar el filtro incoherente.
+    panel.combo_anio.setCurrentText("1976")
+    bombear()
+    sel(panel.combo_tabla, "personas")
+    bombear()
+    if panel._temas_disponibles:
+        check(panel.combo_tema.itemData(0) == dp.TODOS_TEMAS,
+              "al cambiar de censo el filtro se repuebla con los temas de ese año",
+              f"{panel.combo_tema.count() - 1} temas en 1976")
+    # En el modo SQL no hay lista de variables que acotar.
+    panel.combo_anio.setCurrentText("2024")
+    bombear()
+    panel.chk_avanzado.setChecked(True)
+    bombear()
+    check(not visible(panel.combo_tema), "el modo SQL oculta el campo Tema")
+    panel.chk_avanzado.setChecked(False)
+    bombear()
+    # En fichas el mismo selector agrupa por BLOQUE de la ficha, con otro rótulo.
+    sel(panel.combo_tabla, "fichas")
+    bombear()
+    check(visible(panel.combo_tema), "en fichas el selector sigue disponible")
+    check(panel.lbl_tema.text() == "Bloque:",
+          "y se llama «Bloque:», no «Tema:»", panel.lbl_tema.text())
+    check("ficha del INE" in (panel.combo_tema.toolTip() or ""),
+          "con la ayuda propia de los bloques")
+    bloques = opciones(panel.combo_tema)
+    check(len(bloques) > 8, f"ofrece los bloques de la ficha ({len(bloques) - 1})")
+
+    todas_fichas = len(opciones(panel.combo_variable))
+    serv = next((panel.combo_tema.itemData(i)
+                 for i in range(panel.combo_tema.count())
+                 if "ervicios" in panel.combo_tema.itemText(i)), None)
+    if check(serv is not None, "hay un bloque de servicios básicos", str(serv)):
+        sel(panel.combo_tema, serv)
+        bombear()
+        filtradas = opciones(panel.combo_variable)
+        check(1 <= len(filtradas) < todas_fichas,
+              f"filtrar por bloque reduce la lista ({todas_fichas} → {len(filtradas)})")
+        # Al filtrar, el prefijo del bloque desaparece: ya lo dice el selector.
+        textos = [panel.combo_variable.itemText(i)
+                  for i in range(panel.combo_variable.count())]
+        check(all("·" not in t for t in textos),
+              "y las etiquetas ya no repiten el nombre del bloque",
+              textos[0] if textos else "")
+        sel(panel.combo_tema, dp.TODOS_TEMAS)
+        bombear()
+        check(len(opciones(panel.combo_variable)) == todas_fichas,
+              "volver a «Todos» restaura las 245 opciones")
+        check(any("·" in panel.combo_variable.itemText(i)
+                  for i in range(panel.combo_variable.count())),
+              "y el prefijo del bloque vuelve a mostrarse")
 
 except Exception:
     traceback.print_exc()

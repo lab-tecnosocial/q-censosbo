@@ -18,6 +18,34 @@ changelog=
       los campos se resuelve según la versión (core/compat.py) y los enums de Qt
       y de QGIS van cualificados. Verificado con la suite completa en QGIS 3.28,
       3.44 y 4.2, y con una prueba end-to-end contra los datos reales.
+    - El plugin dice a quién se le hizo cada pregunta del censo. El diccionario
+      del INE trae ahora el universo de cada variable, y tanto el campo Variable
+      como el resumen lo declaran: un promedio de escolaridad «de la población»
+      que en realidad es de personas de 19 años o más se lee distinto.
+    - Cartografía municipal completa: los 343 municipios del CPV-2024. Los cuatro
+      municipios indígenas creados desde 2016 ya tienen su propio polígono; antes
+      su territorio se dibujaba dentro del municipio del que se separaron, así que
+      sus datos quedaban atribuidos al municipio equivocado (7.599 km²). También
+      desaparecen las franjas blancas que se veían entre municipios al hacer zoom.
+    - Nuevo campo Tema para acotar la lista de variables. Son los temas del
+      catálogo del INE y los mismos en los cinco censos, así que también sirven
+      para encontrar la variable equivalente de otro año: «Educación» deja 11 de
+      las 119 variables de personas en 2024. En las fichas de manzano y comunidad
+      el mismo campo filtra por bloque, y reduce las 245 opciones a 41 en
+      «Servicios básicos».
+    - Nueva casilla «Mostrar por km²»: convierte un conteo o una suma en densidad,
+      usando la superficie que declara la cartografía del censo. No hace falta
+      volver a consultar para activarla.
+    - Al elegir una variable, su descripción oficial completa aparece al pasar el
+      ratón: qué mide, la pregunta tal como se leyó en campo y, en las variables
+      derivadas, la regla con que el INE las construyó. Cubre 445 variables de los
+      cinco censos.
+    - Los diccionarios se actualizan solos cuando cambian en el origen. Antes
+      bastaba con que el archivo estuviera en la caché para darlo por bueno, así
+      que una instalación con datos ya descargados nunca veía las correcciones ni
+      las columnas nuevas del INE.
+    - El catálogo de indicadores de manzano y comunidad se genera desde el
+      diccionario publicado del censo, no de un archivo interno del paquete de R.
     - La instalación recomendada pasa a ser el repositorio oficial de
       complementos, que avisa de las actualizaciones. Documentación actualizada.
     - Las nuevas versiones se publican solas en plugins.qgis.org desde el CI.

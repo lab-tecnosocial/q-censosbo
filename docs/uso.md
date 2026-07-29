@@ -63,7 +63,7 @@ valor en el mapa.
 | Nivel | Unidades | Cuándo |
 |---|---|---|
 | **Departamental** | 9 | comparaciones nacionales, y el único nivel de 1976 |
-| **Municipal** | 339 | el nivel habitual de trabajo |
+| **Municipal** | 343 | el nivel habitual de trabajo |
 | **Manzano/Comunidad** | 268.604 | análisis intraurbano, solo con las tablas de fichas |
 
 **Solo aparecen los niveles que existen** para el año y la tabla elegidos. Y si solo hay uno, el
@@ -101,6 +101,26 @@ Qué unidades censales incluir, en el nivel de manzano/comunidad:
 
 ### Análisis
 
+#### Tema / Bloque
+
+**Acota la lista de variables**, para no recorrer cientos de opciones buscando una. Cambia de
+nombre según la tabla:
+
+- **Tema** en los microdatos: los temas del catálogo del INE —educación, migración, servicios
+  básicos, fecundidad…—. Son **los mismos en los cinco censos**, así que también sirven para
+  encontrar la variable equivalente de otro año.
+- **Bloque** en las fichas de manzano y comunidad: los bloques del geoportal, que además son los
+  que definen el denominador de «% del total del bloque».
+
+Cada opción dice cuántas variables tiene. *Ejemplos:* `Educación (11)` deja 11 de las 119 variables
+de personas en 2024; `Servicios básicos` deja 41 de las 245 opciones de la ficha. Con **Todos los
+temas** se ve la lista completa.
+
+Al filtrar por un bloque, las etiquetas dejan de repetir su nombre: si ya elegiste «Servicios
+básicos», no hace falta que cada opción lo lleve delante.
+
+No aparece en el modo SQL, donde no hay lista que acotar.
+
 #### Variable
 
 **Qué se mide.** La primera opción, **Conteo de registros**, cuenta personas o viviendas y no
@@ -116,6 +136,45 @@ entre paréntesis, que es lo que decide qué agregaciones tienen sentido:
 Las columnas geográficas y técnicas (`idep`, `iprov`, `imun`, `area`, `i00`, claves de join) no se
 listan: no son variables de análisis. En las tablas de fichas, las opciones vienen agrupadas por
 bloque temático (`Servicios básicos · Agua por cañería de red`), porque son 245.
+
+Al elegir una variable, debajo aparece su descripción y —cuando corresponde— **a quién se le hizo
+la pregunta**:
+
+> `40. Sabe leer y escribir`
+> Se preguntó a: personas de 7 años o más.
+
+Ese dato viene del diccionario oficial y **cambia cómo se lee el resultado**: un promedio de
+escolaridad no es «de la población» si la pregunta solo se hizo a mayores de 19 años. El resumen del
+resultado lo repite, para que quede en el mapa que publiques. No se muestra cuando el universo es el
+obvio (todas las personas, todas las viviendas): ahí solo sería ruido.
+
+!!! warning "Ojo al comparar años"
+    El INE movió el filtro de edad de varias preguntas entre censos. `nivel_edu`, por ejemplo, se
+    construyó sobre personas de 6 años o más en 1992, 4 en 2001 y **19** en 2024. Si vas a comparar
+    censos, revisa el universo de cada uno antes de sacar conclusiones.
+
+**Pasa el ratón por el selector** y verás la documentación oficial completa de la variable: qué mide
+exactamente, la pregunta tal como se leyó en campo, a qué población se aplicó y —en las variables
+derivadas— la regla con que el INE las construyó. Sale de los diccionarios DDI del catálogo del INE
+y cubre 445 variables de los cinco censos. Es lo que conviene leer antes de dar por hecho que una
+variable mide lo que su nombre sugiere.
+
+#### Mostrar por km²
+
+Convierte el resultado en una **densidad**: divide el valor de cada unidad entre su superficie.
+
+Solo aparece con **Conteo** y con **Suma**, que son las únicas magnitudes en las que tiene sentido —
+una edad promedio o un porcentaje «por km²» no significa nada—, y en los niveles departamental y
+municipal, los únicos con superficie declarada.
+
+*Ejemplo:* Conteo de personas por municipio + esta casilla = habitantes por km².
+
+Activarla **no obliga a volver a consultar**: es una transformación del resultado que ya tienes.
+
+!!! note "Qué superficie se usa"
+    La que declara la cartografía municipal del censo. No incluye los grandes lagos y salares, que
+    no pertenecen a ningún municipio, así que en La Paz, Oruro y Potosí la densidad sale algo por
+    encima de la que se calcularía con la superficie oficial del departamento.
 
 #### Agregación
 
@@ -184,6 +243,17 @@ respondieron». El resumen lo dice explícitamente:
 > *Calculado sobre 4.529.497 casos con dato (39,9% de 11.365.333 registros). El resto no
 > respondió o la pregunta no le aplica, y queda fuera del denominador.*
 
+Son **dos cosas distintas y complementarias**, y conviene no confundirlas:
+
+| | Qué dice | De dónde sale |
+|---|---|---|
+| **Se preguntó a** | El universo *de diseño*: a quién iba dirigida la pregunta en el cuestionario | El diccionario oficial del INE |
+| **Calculado sobre** | Los casos *con dato* que efectivamente entraron en el cálculo | Se cuenta en la consulta |
+
+El primero explica el segundo. Si una pregunta se hizo a personas de 7 años o más, es normal que los
+casos con dato sean bastante menos que el total de registros: el resto no es «no respuesta», es
+población fuera del universo.
+
 Si una variable no tiene catálogo de categorías en el diccionario, el plugin lee sus valores
 distintos del propio archivo. Cuando ni así hay categorías (dominio demasiado grande, como una
 fecha), **Porcentaje** se deshabilita y se explica por qué; usa **Moda** en su lugar.
@@ -237,10 +307,11 @@ Tras **Consultar** verás:
       clasificación elegido.
 - Avisos cuando hacen falta: unidades sin geometría, o la cobertura de las fichas.
 
-!!! warning "Municipios sin geometría"
-    Las geometrías incluidas en el plugin tienen 339 municipios, pero los datos de 2024 y 2001
-    traen 343: cuatro municipios de creación reciente (`031304`, `050405`, `051204`, `080901`) no
-    tienen polígono y no se pintan. El resumen y el mensaje al generar el mapa lo indican.
+!!! note "Cuando un código no tiene polígono"
+    La cartografía del plugin es la división municipal vigente, con los **343** municipios del
+    CPV-2024, así que 2024 y 2001 se pintan completos. Al mapear censos anteriores puede haber
+    códigos que ya no existan en esa división: el resumen y el mensaje al generar el mapa dicen
+    cuántas unidades quedan sin pintar y cuáles son.
 
 ## Modo SQL avanzado
 
@@ -305,5 +376,12 @@ mismo indicador en 20 municipios de una pasada).
 
 El plugin guarda en `~/.censosbo_qgis/`: los diccionarios por año, las geometrías de
 manzanos y comunidades (`fichas/`) y las capas generadas (`capas/`). Los microdatos **no** se
-descargan: DuckDB los consulta en remoto. Si se publican datos nuevos en los releases, borra la
-carpeta para forzar una recarga.
+descargan: DuckDB los consulta en remoto.
+
+**Los diccionarios y las geometrías se actualizan solos.** Antes de usar un archivo cacheado, el
+plugin comprueba con el servidor si cambió (una consulta pequeña, sin descargar el archivo) y solo
+lo vuelve a bajar si hace falta. Así, cuando el INE corrige una etiqueta o el paquete de datos añade
+información, la ves sin tener que hacer nada. Sin conexión se usa la copia local, y el plugin sigue
+funcionando.
+
+Si aun así quieres partir de cero, puedes borrar la carpeta: se vuelve a descargar lo necesario.

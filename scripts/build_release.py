@@ -74,7 +74,13 @@ def verificar(zip_path):
     # `.bandit` es un dotfile: la guía del repositorio oficial advierte de que
     # algunas herramientas de empaquetado los excluyen sin avisar, y sin él el
     # escaneo vuelve a bloquear el plugin por los 18 hallazgos irreducibles.
-    for obligatorio in ("metadata.txt", "__init__.py", "LICENSE", ".bandit"):
+    for obligatorio in ("metadata.txt", "__init__.py", "LICENSE", ".bandit",
+                        # Datos empaquetados: sin ellos el plugin instala pero
+                        # arranca sin geometrías ni catálogo, y el fallo se ve tarde.
+                        "data/geo_municipios.geojson",
+                        "data/geo_departamentos.geojson",
+                        "data/dicc_fichas.csv",
+                        "data/docs_variables.csv"):
         if f"{PLUGIN_DIR.name}/{obligatorio}" not in nombres:
             problemas.append(f"falta {obligatorio}")
     basura = [n for n in nombres

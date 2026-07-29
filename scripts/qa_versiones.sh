@@ -20,7 +20,8 @@
 #   scripts/qa_versiones.sh min      # suite en el mínimo declarado
 #   scripts/qa_versiones.sh qgis4    # suite en QGIS 4
 #   scripts/qa_versiones.sh e2e      # end-to-end real (necesita internet)
-#   scripts/qa_versiones.sh todo     # las cuatro
+#   scripts/qa_versiones.sh instalacion  # el ZIP publicable instala y arranca
+#   scripts/qa_versiones.sh todo     # todas
 #
 # Requiere Docker. En Apple Silicon las imágenes son solo amd64, así que corren
 # emuladas: funcionan, pero van lentas.
@@ -87,6 +88,16 @@ tarea_qgis4() {
   correr qcensosbo-qa:qgis4 python3 scripts/qa_headless.py
 }
 
+tarea_instalacion() {
+  if [ ! -f dist/qcensosbo.zip ]; then
+    echo "✗ falta dist/qcensosbo.zip. Genéralo con: python scripts/build_release.py" >&2
+    return 1
+  fi
+  construir qcensosbo-qa:qgis4 Dockerfile.qgis4
+  echo "▸ El ZIP publicable instala y arranca (QGIS 4)"
+  correr qcensosbo-qa:qgis4 python3 scripts/qa_instalacion.py
+}
+
 tarea_e2e() {
   construir qcensosbo-qa:qgis4 Dockerfile.qgis4
   echo "▸ End-to-end con DuckDB y capas reales, en QGIS 4"
@@ -98,6 +109,7 @@ case "${1:-todo}" in
   min)   tarea_min ;;
   qgis4) tarea_qgis4 ;;
   e2e)   tarea_e2e ;;
-  todo)  tarea_check; tarea_min; tarea_qgis4; tarea_e2e ;;
-  *)     echo "Uso: $0 {check|min|qgis4|e2e|todo}"; exit 2 ;;
+  instalacion) tarea_instalacion ;;
+  todo)  tarea_check; tarea_min; tarea_qgis4; tarea_e2e; tarea_instalacion ;;
+  *)     echo "Uso: $0 {check|min|qgis4|e2e|instalacion|todo}"; exit 2 ;;
 esac

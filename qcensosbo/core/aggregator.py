@@ -94,7 +94,8 @@ def get_columns(path_or_url, remote=False):
 def _load_var_dict(anio, tabla=None):
     """
     Lee diccionario_variables.parquet una sola vez y retorna
-    {variable: {"label": str, "tipo": str|None}}, filtrado por tabla.
+    {variable: {"label", "tipo", "universo", "tema", "tema_etiqueta"}}, filtrado
+    por tabla.
 
     Las tablas de fichas (manzano/comunidad) no tienen diccionario en el release:
     su catálogo viene empaquetado con el plugin (ver `fichas.py`).
@@ -105,6 +106,10 @@ def _load_var_dict(anio, tabla=None):
 
     `tipo` viene del diccionario con valores como 'categorica'/'numerica'/'texto'
     y es la fuente de verdad para decidir el tipo de variable.
+
+    `universo`, `tema` y `tema_etiqueta` llegaron con censosbo 1.5.0 y pueden faltar
+    (un diccionario más antiguo en caché): entonces quedan en `None` y quien las
+    consuma simplemente no muestra nada. Nunca son obligatorias.
     """
     cache_key = (anio, tabla)
     if cache_key in _var_dict_cache:
@@ -112,7 +117,10 @@ def _load_var_dict(anio, tabla=None):
 
     from .fichas import TABLAS as TABLAS_FICHAS, catalogo
     if tabla in TABLAS_FICHAS:
-        result = {r["variable"]: {"label": r["etiqueta"], "tipo": r["tipo"]}
+        result = {r["variable"]: {"label": r["etiqueta"], "tipo": r["tipo"],
+                                  "universo": r.get("universo") or None,
+                                  "tema": r.get("tema") or None,
+                                  "tema_etiqueta": r.get("tema_etiqueta") or None}
                   for r in catalogo(tabla)}
         _var_dict_cache[cache_key] = result
         return result
@@ -136,18 +144,39 @@ def _load_var_dict(anio, tabla=None):
         col_desc = _find_col(df, ["label", "etiqueta_variable", "descripcion",
                                   "descripcion_variable", "etiqueta", "desc"])
         col_tipo = _find_col(df, ["tipo", "type", "tipo_variable"])
+        # Añadidas en censosbo 1.5.0; ausentes en diccionarios anteriores.
+        col_univ = _find_col(df, ["universo"])
+        col_tema = _find_col(df, ["tema"])
+        col_temal = _find_col(df, ["tema_etiqueta"])
         if not col_var:
             _var_dict_cache[cache_key] = {}
             return {}
 
         df = _filter_by_tabla(df, tabla)
 
+        def texto(fila, col):
+            """Valor de texto limpio, o None. Los nulos de parquet llegan como NaN,
+            que `str()` convierte en la cadena 'nan' — de ahí la comprobación."""
+            if not col:
+                return None
+            valor = fila[col]
+            if valor is None or valor != valor:          # NaN != NaN
+                return None
+            valor = str(valor).strip()
+            return valor if valor and valor.lower() not in ("nan", "none") else None
+
         result = {}
         for _, r in df.iterrows():
             name = str(r[col_var]).strip()
             label = str(r[col_desc]).strip() if col_desc else ""
             tipo = str(r[col_tipo]).strip().lower() if col_tipo else None
-            result[name] = {"label": label, "tipo": tipo}
+            result[name] = {
+                "label": label,
+                "tipo": tipo,
+                "universo": texto(r, col_univ),
+                "tema": texto(r, col_tema),
+                "tema_etiqueta": texto(r, col_temal),
+            }
         _var_dict_cache[cache_key] = result  # cachear éxito
         return result
     except Exception:
@@ -167,6 +196,77 @@ def get_var_types(anio, tabla=None):
     """
     return {v: info["tipo"] for v, info in _load_var_dict(anio, tabla).items()
             if info.get("tipo")}
+
+
+# Universos que no siguen un patrón de edad. Los demás se derivan (ver
+# `universo_legible`), así que un universo nuevo del INE no necesita tocar esto.
+_UNIVERSOS_FIJOS = {
+    "todas_personas":         "todas las personas",
+    "todas_viviendas":        "todas las viviendas",
+    "viviendas_presentes":    "viviendas con personas presentes",
+    "viviendas_particulares": "viviendas particulares",
+    "personas_emigrantes":    "personas emigrantes",
+    "personas_fallecidas":    "personas fallecidas",
+    "hogares":                "hogares",
+}
+
+_PLURALES = {"personas": "personas", "mujeres": "mujeres", "hombres": "hombres"}
+
+
+def universo_legible(universo):
+    """Traduce el slug de universo del diccionario a algo que se pueda leer.
+
+    `personas_7_mas` → «personas de 7 años o más»; `mujeres_15_49` → «mujeres de 15
+    a 49 años». Se resuelve por patrón y no con una lista cerrada, para que un
+    universo nuevo en el diccionario salga razonable sin tocar el plugin.
+
+    Devuelve `None` si no hay universo (diccionario anterior a censosbo 1.5.0, o
+    una clave geográfica), y en ese caso la interfaz simplemente no dice nada.
+    """
+    if not universo:
+        return None
+    slug = str(universo).strip().lower()
+    if slug in _UNIVERSOS_FIJOS:
+        return _UNIVERSOS_FIJOS[slug]
+
+    partes = slug.split("_")
+    if len(partes) == 3 and partes[0] in _PLURALES and partes[2] == "mas" \
+            and partes[1].isdigit():
+        return f"{_PLURALES[partes[0]]} de {partes[1]} años o más"
+    if len(partes) == 3 and partes[0] in _PLURALES \
+            and partes[1].isdigit() and partes[2].isdigit():
+        return f"{_PLURALES[partes[0]]} de {partes[1]} a {partes[2]} años"
+
+    # Unidades geográficas (departamentos, cantones, zonas…) y cualquier cosa nueva.
+    return slug.replace("_", " ")
+
+
+def get_var_universos(anio, tabla=None):
+    """{variable: universo legible} — a quién se le hizo cada pregunta.
+
+    Viene del diccionario de censosbo 1.5.0+. Es el dato que evita el error más
+    común del análisis censal: leer un porcentaje como si fuera sobre toda la
+    población cuando la pregunta solo se hizo a un subgrupo (`nivel_edu` en 2024 se
+    construyó sobre personas de 19 años o más, por ejemplo). Las variables sin
+    universo declarado no aparecen en el resultado.
+    """
+    salida = {}
+    for var, info in _load_var_dict(anio, tabla).items():
+        legible = universo_legible(info.get("universo"))
+        if legible:
+            salida[var] = legible
+    return salida
+
+
+def get_var_temas(anio, tabla=None):
+    """{variable: (tema, etiqueta del tema)} para filtrar el catálogo por tema."""
+    salida = {}
+    for var, info in _load_var_dict(anio, tabla).items():
+        tema = info.get("tema")
+        if tema:
+            salida[var] = (tema, info.get("tema_etiqueta") or
+                           tema.replace("_", " ").capitalize())
+    return salida
 
 
 def get_value_labels(anio, variable, tabla=None):

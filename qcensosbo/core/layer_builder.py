@@ -77,13 +77,59 @@ def geo_nombres(nivel):
     return result
 
 
+_superficies_cache = {}
+
+
+def geo_superficies(nivel):
+    """{geo_code: km²} desde el GeoJSON empaquetado, para calcular densidades.
+
+    `superficie_km2` la trae `censosbo::geo_municipios` (1.6.0+), así que el plugin
+    no tiene que reproyectar y medir polígonos: usa el área que la fuente ya declara.
+    A nivel departamental se **suma la de sus municipios**, que es consistente porque
+    `geo_departamentos` se deriva por disolución de los municipales.
+
+    Ojo con lo que mide: la suma nacional da unos 1.063.500 km², frente a los
+    ~1.098.600 de la superficie oficial de Bolivia. La diferencia son los grandes
+    cuerpos de agua y salares que no pertenecen a ningún municipio (Titicaca, Poopó,
+    Uru Uru, Salar de Uyuni). Es decir, esto es **superficie municipal**, y las
+    densidades que salgan de aquí son algo mayores que las oficiales en los
+    departamentos con lagos o salares grandes. El panel lo dice.
+
+    Devuelve `{}` si el GeoJSON no trae la columna (una versión anterior de los
+    datos empaquetados), y entonces la densidad simplemente no se ofrece.
+    """
+    if nivel in _superficies_cache:
+        return _superficies_cache[nivel]
+    path = GEO_FILES.get("municipio")
+    resultado = {}
+    if path and path.exists():
+        try:
+            with open(path, encoding="utf-8") as f:
+                geojson = json.load(f)
+            for feature in geojson.get("features", []):
+                props = feature.get("properties", {})
+                km2 = props.get("superficie_km2")
+                if km2 is None:
+                    continue
+                clave = (str(props.get("idep", "")).strip().zfill(2)
+                         if nivel == "departamento"
+                         else _get_geo_code(props, "municipio"))
+                resultado[clave] = resultado.get(clave, 0.0) + float(km2)
+        except Exception as exc:
+            log.aviso("No se pudieron leer las superficies municipales", exc)
+            resultado = {}
+    _superficies_cache[nivel] = resultado
+    return resultado
+
+
 def cobertura_geo(codigos, nivel, departamento=None):
     """(mapeados, sin_geometria) de un conjunto de códigos frente al GeoJSON.
 
-    El GeoJSON empaquetado no tiene todos los municipios que aparecen en los
-    datos: faltan 4 de creación reciente (031304, 050405, 051204, 080901), que
-    salen en 2024 y en 2001. Antes se perdían en silencio —el resumen decía 343
-    unidades y el mapa pintaba 339—, así que el panel usa esto para decirlo.
+    Desde censosbo 1.6.0 la cartografía trae los **343** municipios del CPV-2024, y
+    2024 y 2001 se mapean completos. Sigue haciendo falta porque los censos
+    anteriores usan divisiones distintas: los códigos de 1992 o 1976 no tienen por
+    qué existir en la división actual, y sin esto se perderían en silencio (el
+    resumen diría 343 unidades y el mapa pintaría menos).
     """
     disponibles = set(geo_nombres(nivel))
     if departamento and nivel == "municipio":
