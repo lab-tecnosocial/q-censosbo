@@ -4,8 +4,13 @@
 censos de población de Bolivia (**1976, 1992, 2001, 2012 y 2024**) directamente sobre el mapa,
 sin tener que descargar archivos pesados.
 
-[Descargar plugin (.zip)](https://github.com/lab-tecnosocial/q-censosbo/releases/latest/download/qcensosbo.zip){ .md-button .md-button--primary }
-[Cómo instalar](instalacion.md){ .md-button }
+Se instala desde QGIS mismo: **Complementos → Administrar e instalar complementos…**, buscas
+`censo` y pulsas instalar. Está en el
+[repositorio oficial de complementos](https://plugins.qgis.org/plugins/qcensosbo/), así que QGIS
+te avisa de las actualizaciones.
+
+[Cómo instalar](instalacion.md){ .md-button .md-button--primary }
+[Ver en el repositorio de QGIS](https://plugins.qgis.org/plugins/qcensosbo/){ .md-button }
 
 ## Qué hace
 
@@ -32,5 +37,5 @@ sin tener que descargar archivos pesados.
 Más detalles en [Uso](uso.md) y en las [fuentes de datos](datos.md).
 
 !!! note "Requisitos"
-    QGIS 3.28 o superior y conexión a internet. DuckDB (el motor de consulta) se instala
-    automáticamente la primera vez que abres el panel.
+    QGIS 3.28 o superior —**incluido QGIS 4**— y conexión a internet. DuckDB (el motor de
+    consulta) se instala automáticamente la primera vez que abres el panel.

@@ -30,4 +30,4 @@ def aviso(mensaje, exc=None):
     if not _TIENE_QGIS:
         return
     from qgis.core import Qgis, QgsMessageLog
-    QgsMessageLog.logMessage(texto, ETIQUETA, Qgis.Warning)
+    QgsMessageLog.logMessage(texto, ETIQUETA, Qgis.MessageLevel.Warning)

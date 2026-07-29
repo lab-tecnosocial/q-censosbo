@@ -22,12 +22,12 @@ from qgis.core import (
     QgsWkbTypes,
     QgsCoordinateReferenceSystem,
 )
-from qgis.PyQt.QtCore import QVariant
-
 try:
     from ...core import fichas
+    from ...core.compat import TIPO_DECIMAL, TIPO_TEXTO
 except ImportError:                                   # ejecución fuera del plugin
     from qcensosbo.core import fichas
+    from qcensosbo.core.compat import TIPO_DECIMAL, TIPO_TEXTO
 
 
 _TABLAS  = ["fichas", "unidades"]
@@ -162,13 +162,13 @@ class IndicadorManzanosAlgorithm(QgsProcessingAlgorithm):
         lookup = {str(r["geo_code"]): r["valor"] for _, r in df.iterrows()}
 
         fields = QgsFields()
-        fields.append(QgsField("codigo", QVariant.String))
-        fields.append(QgsField("nombre_geo", QVariant.String))
-        fields.append(QgsField("area", QVariant.String))
-        fields.append(QgsField("valor_censo", QVariant.Double))
+        fields.append(QgsField("codigo", TIPO_TEXTO))
+        fields.append(QgsField("nombre_geo", TIPO_TEXTO))
+        fields.append(QgsField("area", TIPO_TEXTO))
+        fields.append(QgsField("valor_censo", TIPO_DECIMAL))
 
-        wkb_type = (QgsWkbTypes.MultiPolygon if area == "urbana"
-                    else QgsWkbTypes.Point)
+        wkb_type = (QgsWkbTypes.Type.MultiPolygon if area == "urbana"
+                    else QgsWkbTypes.Type.Point)
         (sink, dest_id) = self.parameterAsSink(
             parameters, self.OUTPUT, context, fields, wkb_type,
             QgsCoordinateReferenceSystem("EPSG:4326"),
@@ -188,7 +188,7 @@ class IndicadorManzanosAlgorithm(QgsProcessingAlgorithm):
             feat.setGeometry(geom)
             feat.setAttributes([str(codigo), str(nombre or ""), area_lbl,
                                 None if valor is None else float(valor)])
-            sink.addFeature(feat, QgsFeatureSink.FastInsert)
+            sink.addFeature(feat, QgsFeatureSink.Flag.FastInsert)
             feedback.setProgress(80 + int(i / max(total, 1) * 20))
 
         sin_dato = sum(1 for codigo, _, _ in geoms if str(codigo) not in lookup)

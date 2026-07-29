@@ -4,6 +4,12 @@
   <img src="logo.png" alt="Q-CensosBo" width="120">
 </p>
 
+<p align="center">
+  <a href="https://plugins.qgis.org/plugins/qcensosbo/"><img src="https://img.shields.io/badge/QGIS-repositorio%20oficial-589632?logo=qgis&logoColor=white" alt="En el repositorio oficial de complementos de QGIS"></a>
+  <a href="https://github.com/lab-tecnosocial/q-censosbo/releases/latest"><img src="https://img.shields.io/github/v/release/lab-tecnosocial/q-censosbo?label=versión" alt="Última versión"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-GPL--3.0-blue" alt="Licencia GPL-3.0"></a>
+</p>
+
 Plugin de **QGIS** para consultar y mapear los microdatos de los censos de población de
 Bolivia (**1976, 1992, 2001, 2012 y 2024**) directamente dentro de QGIS, sin descargar archivos
 pesados. Basado en el trabajo del paquete de R [**censosbo**](https://github.com/lab-tecnosocial/censosbo)
@@ -22,11 +28,15 @@ pesados. Basado en el trabajo del paquete de R [**censosbo**](https://github.com
 
 ## Instalación
 
-Descarga
-[`qcensosbo.zip`](https://github.com/lab-tecnosocial/q-censosbo/releases/latest/download/qcensosbo.zip) e instálalo en QGIS con
-*Complementos → Administrar e instalar complementos… → Instalar a partir de ZIP*.
+Desde QGIS, en *Complementos → Administrar e instalar complementos…*, busca **Q-CensosBo** e
+instálalo. Está en el [repositorio oficial de complementos](https://plugins.qgis.org/plugins/qcensosbo/),
+así que también recibirás los avisos de actualización.
 
-Requisitos: QGIS ≥ 3.28 e internet. DuckDB se instala solo la primera vez.
+Como alternativa, puedes instalar el
+[ZIP](https://github.com/lab-tecnosocial/q-censosbo/releases/latest/download/qcensosbo.zip) con
+*Instalar a partir de ZIP*.
+
+Requisitos: QGIS ≥ 3.28, incluido QGIS 4, e internet. DuckDB se instala solo la primera vez.
 
 ## Documentación
 

@@ -372,11 +372,11 @@ def _capa_memoria_municipio(geom, nombre):
     from qgis.core import (
         QgsVectorLayer, QgsFeature, QgsField, QgsFields,
     )
-    from qgis.PyQt.QtCore import QVariant
+    from .compat import TIPO_TEXTO
 
     layer = QgsVectorLayer("MultiPolygon?crs=EPSG:4326", "municipio", "memory")
     fields = QgsFields()
-    fields.append(QgsField("nombre_geo", QVariant.String))
+    fields.append(QgsField("nombre_geo", TIPO_TEXTO))
     layer.dataProvider().addAttributes(fields)
     layer.updateFields()
 
@@ -414,16 +414,16 @@ def _capa_memoria_unidades(geoms, lookup, area):
     from qgis.core import (
         QgsVectorLayer, QgsFeature, QgsGeometry, QgsField, QgsFields,
     )
-    from qgis.PyQt.QtCore import QVariant
+    from .compat import TIPO_DECIMAL, TIPO_TEXTO
 
     tabla, wkb_type, area_lbl = _AREA_SPEC[area]
     layer = QgsVectorLayer(f"{wkb_type}?crs=EPSG:4326", tabla, "memory")
 
     fields = QgsFields()
-    fields.append(QgsField("codigo", QVariant.String))
-    fields.append(QgsField("nombre_geo", QVariant.String))
-    fields.append(QgsField("area", QVariant.String))
-    fields.append(QgsField("valor_censo", QVariant.Double))
+    fields.append(QgsField("codigo", TIPO_TEXTO))
+    fields.append(QgsField("nombre_geo", TIPO_TEXTO))
+    fields.append(QgsField("area", TIPO_TEXTO))
+    fields.append(QgsField("valor_censo", TIPO_DECIMAL))
     layer.dataProvider().addAttributes(fields)
     layer.updateFields()
 
@@ -453,12 +453,12 @@ def _escribir_gpkg(layer, out_path, tabla, primera):
     opts.driverName = "GPKG"
     opts.layerName = tabla
     opts.actionOnExistingFile = (
-        QgsVectorFileWriter.CreateOrOverwriteFile if primera
-        else QgsVectorFileWriter.CreateOrOverwriteLayer
+        QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile if primera
+        else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
     )
     res = QgsVectorFileWriter.writeAsVectorFormatV3(
         layer, str(out_path), QgsCoordinateTransformContext(), opts)
-    if res[0] != QgsVectorFileWriter.NoError:
+    if res[0] != QgsVectorFileWriter.WriterError.NoError:
         raise RuntimeError(f"No se pudo escribir el GeoPackage: {res[1]}")
 
 
@@ -488,7 +488,7 @@ def _sin_borde(renderer):
     for rango in renderer.ranges():
         capa_simbolo = rango.symbol().symbolLayer(0)
         try:
-            capa_simbolo.setStrokeStyle(Qt.NoPen)
+            capa_simbolo.setStrokeStyle(Qt.PenStyle.NoPen)
         except AttributeError:
             pass
     return renderer

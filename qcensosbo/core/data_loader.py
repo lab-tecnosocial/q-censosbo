@@ -125,8 +125,15 @@ def _download_file(url, dest_path, progress_cb=None):
 
     peticion = QNetworkRequest(QUrl(url))
     peticion.setRawHeader(b"User-Agent", b"q-censosbo-qgis")
-    # Sigue las redirecciones: los assets de GitHub Releases redirigen a un CDN.
-    peticion.setAttribute(QNetworkRequest.FollowRedirectsAttribute, True)
+    # Los assets de GitHub Releases redirigen a un CDN, así que hay que seguir la
+    # redirección. En Qt5 no es el comportamiento por omisión y hay que pedirlo; en
+    # Qt6 (QGIS 4) sí lo es, y el atributo desapareció —estaba obsoleto desde Qt
+    # 5.15—, así que ahí no hay nada que activar. `getattr` cubre las dos ramas sin
+    # tener que preguntar por la versión.
+    _seguir_redirecciones = getattr(
+        QNetworkRequest, "FollowRedirectsAttribute", None)
+    if _seguir_redirecciones is not None:
+        peticion.setAttribute(_seguir_redirecciones, True)
 
     bloqueante = QgsBlockingNetworkRequest()
     if progress_cb:
@@ -135,7 +142,7 @@ def _download_file(url, dest_path, progress_cb=None):
                 int(recibido / total * 100) if total > 0 else 0))
 
     codigo = bloqueante.get(peticion)
-    if codigo != QgsBlockingNetworkRequest.NoError:
+    if codigo != QgsBlockingNetworkRequest.ErrorCode.NoError:
         raise RuntimeError(
             f"No se pudo descargar {url}: {bloqueante.errorMessage()}")
 

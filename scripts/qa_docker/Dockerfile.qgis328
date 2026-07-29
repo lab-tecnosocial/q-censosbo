@@ -1,0 +1,11 @@
+# El MÍNIMO declarado en metadata.txt (qgisMinimumVersion=3.28).
+#
+# Importa porque es la única rama donde `core/compat.py` usa `QVariant` en vez de
+# `QMetaType` (el constructor de QgsField con QMetaType llegó en 3.38), y porque
+# es lo que hay instalado en muchas oficinas públicas. Sin esta imagen, esa rama
+# del shim se publicaba sin haberse ejecutado nunca.
+FROM qgis/qgis:release-3_28
+
+# Trae Python 3.10 y pandas 2. El fixture se genera con pandas 3, así que
+# `qa_fixture.py` lo guarda en formato portable (ver _portable() allí).
+RUN pip3 install --no-cache-dir pandas duckdb || pip3 install --no-cache-dir pandas

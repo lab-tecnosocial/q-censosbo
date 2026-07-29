@@ -101,6 +101,37 @@ ESCENARIOS_FICHA = [
 ]
 
 
+def _portable(obj):
+    """Convierte las columnas de texto de los DataFrames a `object`.
+
+    El fixture se genera con el pandas más reciente, pero se consume dentro de
+    QGIS, que trae el pandas de su distribución: QGIS 4 tiene pandas 3 y QGIS 3.28
+    todavía pandas 2. El `StringDtype` que pandas 3 usa por defecto no se puede
+    despicklear en pandas 2 (`NotImplementedError` al reconstruir el dtype), así
+    que el fixture quedaba atado a una sola versión y no se podía probar el mínimo
+    declarado del plugin. Con las columnas en `object` el pickle son arrays de
+    numpy corrientes, que cualquier pandas lee.
+    """
+    import pandas as pd
+
+    if isinstance(obj, pd.DataFrame):
+        texto = [c for c in obj.columns
+                 if not pd.api.types.is_numeric_dtype(obj[c])]
+        nuevo = obj.astype({c: object for c in texto}) if texto else obj.copy()
+        # El nombre de las columnas y el índice también son Index con dtype propio:
+        # en pandas 3 salen como StringDtype y rompen igual que los datos.
+        nuevo.columns = pd.Index(list(obj.columns), dtype=object)
+        if not pd.api.types.is_numeric_dtype(obj.index):
+            nuevo.index = pd.Index(list(obj.index), dtype=object)
+        return nuevo
+    if isinstance(obj, dict):
+        return {k: _portable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        tipo = type(obj)
+        return tipo(_portable(v) for v in obj)
+    return obj
+
+
 def main():
     fx = {"cols": {}, "descs": {}, "types": {}, "labels": {},
           "agg": {}, "nat": {}, "cobertura": {}, "distinct": {}}
@@ -176,7 +207,7 @@ def main():
 
     DEST.parent.mkdir(exist_ok=True)
     with open(DEST, "wb") as f:
-        pickle.dump(fx, f)
+        pickle.dump(_portable(fx), f)
     print(f"\n✓ Fixture en {DEST}")
     # os._exit: duckdb aborta en el apagado del intérprete (ver _register_hard_exit).
     sys.stdout.flush()

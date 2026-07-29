@@ -21,7 +21,10 @@ from qgis.core import (
     QgsCoordinateReferenceSystem,
     QgsVectorLayer,
 )
-from qgis.PyQt.QtCore import QVariant
+try:
+    from ...core.compat import TIPO_DECIMAL, TIPO_TEXTO
+except ImportError:                                   # ejecución fuera del plugin
+    from qcensosbo.core.compat import TIPO_DECIMAL, TIPO_TEXTO
 
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
@@ -216,13 +219,13 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
         fields = QgsFields()
         for f in src_layer.fields():
             fields.append(f)
-        fields.append(QgsField("valor_censo", QVariant.Double))
-        fields.append(QgsField("geo_code", QVariant.String))
+        fields.append(QgsField("valor_censo", TIPO_DECIMAL))
+        fields.append(QgsField("geo_code", TIPO_TEXTO))
 
         crs = QgsCoordinateReferenceSystem("EPSG:4326")
         (sink, dest_id) = self.parameterAsSink(
             parameters, self.OUTPUT, context,
-            fields, QgsWkbTypes.MultiPolygon, crs,
+            fields, QgsWkbTypes.Type.MultiPolygon, crs,
         )
 
         # Escribir features al sink
@@ -240,7 +243,7 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
                 out_feat.setAttribute(j, attr)
             out_feat["valor_censo"] = valor
             out_feat["geo_code"] = code
-            sink.addFeature(out_feat, QgsFeatureSink.FastInsert)
+            sink.addFeature(out_feat, QgsFeatureSink.Flag.FastInsert)
 
             feedback.setProgress(85 + int(i / max(total, 1) * 15))
 

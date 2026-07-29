@@ -25,7 +25,7 @@ class CensosBolivaPlugin:
 
         from .panel.dock_panel import CensosBOPanel
         self.panel = CensosBOPanel(self.iface)
-        self.iface.addDockWidget(Qt.RightDockWidgetArea, self.panel)
+        self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.panel)
         self.panel.hide()
 
         # Registrar proveedor en el Toolbox de QGIS Processing

@@ -71,6 +71,26 @@ def check_clean_tree():
         )
 
 
+def check_changelog(new_ver):
+    """Exige una entrada de changelog para la versión que se va a publicar.
+
+    El repositorio oficial de complementos muestra el `changelog=` de metadata.txt
+    en la página del plugin y en el formulario de subida. Cuando falta hay que
+    redactarlo a mano y sin contexto justo en el momento de publicar, así que aquí
+    se bloquea el release en vez de descubrirlo después.
+    """
+    text = METADATA.read_text(encoding="utf-8")
+    if "changelog=" not in text:
+        abort("metadata.txt no tiene campo changelog=.")
+    # La entrada es la versión sola en su línea, indentada bajo changelog=.
+    if not re.search(rf"^\s+{re.escape(new_ver)}\s*$", text, re.MULTILINE):
+        abort(
+            f"El changelog de metadata.txt no tiene entrada para {new_ver}.\n"
+            f"  Añade una línea «    {new_ver}» con los cambios debajo, arriba de "
+            "la versión anterior."
+        )
+
+
 def check_syntax():
     py_files = [
         *ROOT.glob("qcensosbo/*.py"),
@@ -106,21 +126,24 @@ def main():
         print("Cancelado.")
         sys.exit(0)
 
-    print("\n1/5 Verificando árbol limpio…")
+    print("\n1/6 Verificando árbol limpio…")
     check_clean_tree()
 
-    print("2/5 Verificando sintaxis…")
+    print("2/6 Verificando sintaxis…")
     check_syntax()
 
-    print("3/5 Actualizando metadata.txt…")
+    print("3/6 Verificando el changelog…")
+    check_changelog(new_ver)
+
+    print("4/6 Actualizando metadata.txt…")
     write_version(new_ver)
 
-    print("4/5 Commit y tag…")
+    print("5/6 Commit y tag…")
     run(f'git add "{METADATA}"')
     run(f'git commit -m "release v{new_ver}"')
     run(f"git tag v{new_ver}")
 
-    print("5/5 Push a origin…")
+    print("6/6 Push a origin…")
     run("git push origin main --tags")
 
     print(f"\n✓ v{new_ver} publicada. El CI crea el Release con el ZIP y despliega el sitio.")

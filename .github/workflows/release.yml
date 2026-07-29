@@ -26,3 +26,19 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/qcensosbo.zip \
             --title "$GITHUB_REF_NAME" --generate-notes
+
+      # El repositorio oficial es la vía por la que QGIS avisa de actualizaciones.
+      # Se salta si no hay token configurado, para que el release de GitHub siga
+      # funcionando en un fork o antes de crear el secreto.
+      - name: Publicar en el repositorio oficial de QGIS
+        if: ${{ secrets.OSGEO_PLUGIN_TOKEN != '' }}
+        env:
+          OSGEO_PLUGIN_TOKEN: ${{ secrets.OSGEO_PLUGIN_TOKEN }}
+        run: scripts/publish_osgeo.sh
+
+      - name: Avisar si no hay token
+        if: ${{ secrets.OSGEO_PLUGIN_TOKEN == '' }}
+        run: |
+          echo "::warning::Sin OSGEO_PLUGIN_TOKEN: la versión NO se publicó en \
+          plugins.qgis.org. Créalo en la página del plugin (botón «Tokens») y \
+          guárdalo con: gh secret set OSGEO_PLUGIN_TOKEN"

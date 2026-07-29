@@ -477,10 +477,10 @@ class CensosBOPanel(QDockWidget):
         tooltip lleva la ayuda del campo MÁS la selección completa. Se compone en
         `_tooltip_combo` para que actualizar la selección no borre la ayuda.
         """
-        combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         combo.setMinimumContentsLength(n_chars)
         try:
-            combo.view().setTextElideMode(Qt.ElideRight)
+            combo.view().setTextElideMode(Qt.TextElideMode.ElideRight)
         except Exception as exc:
             # Sin elipsis el texto se corta en seco: cosmético.
             log.aviso("No se pudo activar la elipsis en un combo", exc)
@@ -503,8 +503,8 @@ class CensosBOPanel(QDockWidget):
     def _build_ui(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setWidget(scroll)
 
         container = QWidget()
@@ -518,25 +518,25 @@ class CensosBOPanel(QDockWidget):
         # Encabezado
         lbl_title = QLabel("Q-CensosBo")
         lbl_title.setObjectName("lbl_section")
-        lbl_title.setAlignment(Qt.AlignCenter)
+        lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main.addWidget(lbl_title)
 
         _ver = _plugin_version()
         if _ver:
             lbl_version = QLabel(f"v{_ver}")
             lbl_version.setObjectName("lbl_hint")
-            lbl_version.setAlignment(Qt.AlignCenter)
+            lbl_version.setAlignment(Qt.AlignmentFlag.AlignCenter)
             main.addWidget(lbl_version)
 
         self.lbl_engine = QLabel("")
         self.lbl_engine.setObjectName("lbl_hint")
-        self.lbl_engine.setAlignment(Qt.AlignCenter)
+        self.lbl_engine.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_engine.setWordWrap(True)
         main.addWidget(self.lbl_engine)
 
         sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFrameShadow(QFrame.Sunken)
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
         main.addWidget(sep)
 
         # ── Sección: Datos ────────────────────────────────────────────────────
@@ -645,15 +645,15 @@ class CensosBOPanel(QDockWidget):
         # el único botón sólido, así que atraía el clic estando apagado.
         self.btn_consultar = QPushButton("1 · Consultar")
         self.btn_consultar.setObjectName("btn_paso")
-        self.btn_consultar.setCursor(Qt.PointingHandCursor)
+        self.btn_consultar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_consultar.setToolTip(
             "Calcula la agregación por unidad geográfica y muestra el resumen abajo."
         )
         form_analisis.addRow(self.btn_consultar)
 
         sep_sql = QFrame()
-        sep_sql.setFrameShape(QFrame.HLine)
-        sep_sql.setFrameShadow(QFrame.Sunken)
+        sep_sql.setFrameShape(QFrame.Shape.HLine)
+        sep_sql.setFrameShadow(QFrame.Shadow.Sunken)
         form_analisis.addRow(sep_sql)
 
         self.chk_avanzado = QCheckBox("Modo SQL avanzado")
@@ -698,7 +698,7 @@ class CensosBOPanel(QDockWidget):
         row_total.addWidget(self.lbl_total_caption)
         self.lbl_total = QLabel("—")
         self.lbl_total.setObjectName("lbl_stat_value")
-        self.lbl_total.setAlignment(Qt.AlignRight)
+        self.lbl_total.setAlignment(Qt.AlignmentFlag.AlignRight)
         row_total.addWidget(self.lbl_total)
         stats_layout.addLayout(row_total)
 
@@ -712,7 +712,7 @@ class CensosBOPanel(QDockWidget):
         self.lbl_stats_hint = QLabel(
             "Pulsa '1 · Consultar' para calcular\nla agregación y ver el resumen.")
         self.lbl_stats_hint.setObjectName("lbl_hint")
-        self.lbl_stats_hint.setAlignment(Qt.AlignCenter)
+        self.lbl_stats_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_layout.addWidget(self.lbl_stats_hint)
 
         main.addWidget(grp_stats)
@@ -725,7 +725,7 @@ class CensosBOPanel(QDockWidget):
 
         self.lbl_progress = QLabel("Procesando…")
         self.lbl_progress.setObjectName("lbl_hint")
-        self.lbl_progress.setAlignment(Qt.AlignCenter)
+        self.lbl_progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_progress.setVisible(False)
         action_l.addWidget(self.lbl_progress)
 
@@ -738,7 +738,7 @@ class CensosBOPanel(QDockWidget):
 
         self.btn_generar = QPushButton("2 · Generar mapa")
         self.btn_generar.setObjectName("btn_paso")
-        self.btn_generar.setCursor(Qt.PointingHandCursor)
+        self.btn_generar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_generar.setEnabled(False)   # se habilita tras "Consultar"
         self.btn_generar.setToolTip(
             "Dibuja el mapa con el resultado ya consultado.")
@@ -1358,7 +1358,7 @@ class CensosBOPanel(QDockWidget):
                 item.setEnabled(False)
                 self.combo_agg.setItemData(
                     i, "Esta variable no tiene catálogo de categorías.",
-                    Qt.ToolTipRole)
+                    Qt.ItemDataRole.ToolTipRole)
 
         idx = self.combo_agg.findData(current)
         if idx < 0 or (deshabilitar_pct and current == "pct_category"):
@@ -1752,7 +1752,7 @@ class CensosBOPanel(QDockWidget):
         try:
             from qgis.PyQt.QtGui import QFontMetrics
             return QFontMetrics(widget.font()).elidedText(
-                text, Qt.ElideRight, max(20, width - 2))
+                text, Qt.TextElideMode.ElideRight, max(20, width - 2))
         except Exception:
             return text
 

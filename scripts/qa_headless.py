@@ -232,7 +232,8 @@ def bombear(n=25):
     from qgis.PyQt.QtCore import QEvent
     for _ in range(n):
         APP.processEvents()
-    APP.sendPostedEvents(None, QEvent.DeferredDelete)
+    # Qt6 exige cualificar el enum; el nombre cualificado existe también en Qt5.
+    APP.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     APP.processEvents()
 
 

@@ -1,11 +1,51 @@
 [general]
 name=Q-CensosBo
 qgisMinimumVersion=3.28
+# Sin este campo el sitio asume compatibilidad solo hasta el final de la rama 3.x.
+# Con 4.99 el plugin aparece en la lista «QGIS 4 Ready». Ver core/compat.py.
+qgisMaximumVersion=4.99
 description=Query and map the microdata of Bolivia's population censuses (1976-2024) directly in QGIS
 description[es]=Consulta y visualiza los microdatos de los censos de Bolivia (1976-2024) directamente en QGIS
 about=Access the Bolivian census microdata published by the censosbo project. Pick a census year and table, aggregate any variable by department or municipality (count, mean, median, sum, standard deviation, mode, or the share of a category), review a summary of the result and get a styled choropleth layer. Data is queried remotely with DuckDB, so the large Parquet files are never downloaded. Also covers the finest level of the 2024 census: 268,604 urban blocks and rural communities with the 194 indicators of the INE summary sheet (245 options, counting those that add up both sexes). Includes two Processing algorithms for graphical models and batch runs. Interface and documentation are in Spanish.
 about[es]=Plugin para acceder a los microdatos censales de Bolivia del paquete censosbo. Permite consultar datos por año y tabla, agregar cualquier variable por departamento o municipio (conteo, media, mediana, suma, desviación estándar, moda o porcentaje de una categoría), ver un resumen del resultado y generar mapas coropléticos ya estilizados. Los datos se consultan en remoto con DuckDB, sin descargar los archivos Parquet. Incluye el nivel de manzano urbano y comunidad rural del CPV-2024, con los 194 indicadores de la ficha resumen del INE (245 opciones contando las que suman ambos sexos) para las 268.604 unidades censales del país, y dos algoritmos de Processing para modelos gráficos y procesamiento por lotes.
 version=0.4.3
+# El sitio de complementos muestra este changelog en la página del plugin y en el
+# formulario de subida, así que no hay que redactarlo a mano en cada envío. Las
+# líneas continuadas van indentadas; la versión más reciente, arriba.
+changelog=
+    0.5.0
+    - Compatible con QGIS 4 (Qt6) sin dejar de funcionar en QGIS 3.28: el tipo de
+      los campos se resuelve según la versión (core/compat.py) y los enums de Qt
+      y de QGIS van cualificados. Verificado con la suite completa en QGIS 3.28,
+      3.44 y 4.2, y con una prueba end-to-end contra los datos reales.
+    - La instalación recomendada pasa a ser el repositorio oficial de
+      complementos, que avisa de las actualizaciones. Documentación actualizada.
+    - Las nuevas versiones se publican solas en plugins.qgis.org desde el CI.
+    0.4.3
+    - Cero hallazgos en el escaneo de seguridad del repositorio oficial: las
+      descargas usan la pila de red de QGIS, que respeta el proxy configurado.
+    - Los avisos internos van al registro de mensajes de QGIS en vez de perderse.
+    0.4.2
+    - LICENSE y README incluidos en el paquete, que el repositorio oficial exige.
+    0.4.1
+    - Metadatos en inglés con variantes en español, para el repositorio oficial.
+    0.4.0
+    - El porcentaje de una categoría se calcula sobre los casos con dato, no
+      sobre el total de registros: antes subestimaba las preguntas que solo
+      aplican a un subgrupo.
+    - Los campos se habilitan según lo ya elegido y los niveles que no
+      corresponden dejan de aparecer; cada campo tiene ayuda con ejemplos.
+    - El resumen anticipa las clases del mapa y declara lo que queda fuera.
+    - Formato numérico español y 140 comprobaciones automáticas de la interfaz.
+    0.3.0
+    - Nivel de manzano urbano y comunidad rural del CPV-2024: 268.604 unidades
+      con los 194 indicadores de la ficha del INE.
+    0.2.0
+    - Dos algoritmos de Processing, para modelos gráficos y procesamiento por
+      lotes.
+    0.1.0
+    - Primera versión: consulta de los microdatos por departamento y municipio
+      con mapas coropléticos.
 author=Alex Ojeda Copa
 email=alex@labtecnosocial.org
 repository=https://github.com/lab-tecnosocial/q-censosbo

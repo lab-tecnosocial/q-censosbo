@@ -1,0 +1,17 @@
+# Entorno de prueba: QGIS 4 / Qt6 con el motor de consulta del plugin.
+#
+# Parte de la imagen oficial del pyqgis4-checker de QGIS (Ubuntu + QGIS 4 desde el
+# repositorio oficial) y le añade lo único que el plugin necesita y ella no trae.
+# Se usa para dos cosas que en macOS no se pueden hacer:
+#
+#   - Ejecutar la suite headless en la rama Qt6, no solo en Qt5.
+#   - Ejercitar DuckDB DENTRO de QGIS: en macOS el `_duckdb.so` del Python del
+#     bundle está firmado con otro Team ID y el sistema lo rechaza al importarlo
+#     desde fuera, así que el camino real del motor quedaba sin probar.
+#
+# La imagen es solo amd64; en Apple Silicon corre emulada (ver qa_qgis4.sh).
+FROM ghcr.io/qgis/pyqgis4-checker:main-ubuntu
+
+# --break-system-packages: la imagen usa el Python del sistema, sin venv, igual
+# que hace QGIS al instalar duckdb en la máquina de la usuaria.
+RUN pip install --break-system-packages --no-cache-dir duckdb pandas
