@@ -79,6 +79,7 @@ qe._hard_exit_registered = True
 qe.duckdb_available = lambda: True
 
 import qcensosbo.core.aggregator as am                                # noqa: E402
+import qcensosbo.core.universos as un                                  # noqa: E402
 import qcensosbo.panel.dock_panel as dp                               # noqa: E402
 
 am.get_var_descriptions = lambda a, t=None: FX["descs"].get((a, t), {})
@@ -135,10 +136,16 @@ class CategoriesWorkerFake(QThread):
     done = pyqtSignal(list, int)
     # Se puede forzar a devolver siempre [] para probar la red de seguridad.
     vaciar = False
+    # Último universo de tabla recibido, para comprobarlo desde los tests.
+    ultimo_universo = "(sin llamar)"
 
-    def __init__(self, urls, variable, token=0):
+    def __init__(self, urls, variable, token=0, universo_tabla=None):
         super().__init__()
         self.args = (variable, token)
+        # El panel pasa el universo de la tabla (ver core/universos.py). El doble
+        # lo guarda para poder afirmar que llega, aunque el fixture no filtre.
+        self.universo_tabla = universo_tabla
+        CategoriesWorkerFake.ultimo_universo = universo_tabla
 
     def start(self):
         variable, token = self.args
@@ -852,6 +859,42 @@ try:
     bombear()
     check(panel._var_universos == {},
           "las fichas no declaran universo (no son preguntas)")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    seccion("Q2 · El universo de la TABLA de viviendas (censosbo 1.7.0)")
+    # Otra cosa que lo anterior: eso es a quién se le hizo la pregunta, esto es
+    # qué filas son un caso. La tabla de viviendas del censo trae registros de
+    # personas censadas fuera de una vivienda (calle, tránsito) que el INE no
+    # cuenta como viviendas. Aquí se comprueba que la condición llega desde el
+    # panel hasta el motor; las cifras las fija scripts/qa_universos.py.
+    # La condición SQL en sí (y las cifras que produce) las fija
+    # scripts/qa_universos.py contra los datos reales; aquí se comprueba lo que
+    # solo se ve desde el panel: que el resultado lo declare al usuario.
+    check(un.universo_sql(2024, "viviendas") is not None
+          and "v01_tipoviv" in un.universo_sql(2024, "viviendas"),
+          "la tabla de viviendas tiene condición de universo",
+          str(un.universo_sql(2024, "viviendas")))
+    check(un.universo_sql(2024, "personas") is None,
+          "las demás tablas no la tienen")
+
+    panel.combo_anio.setCurrentText("2024")
+    sel(panel.combo_tabla, "viviendas")
+    sel(panel.combo_nivel, "departamento")
+    bombear()
+    consultar()
+    bombear()
+    check(any("calle o en tránsito" in t for t in resumen_textos()),
+          "el resumen de viviendas declara qué filas quedaron fuera",
+          " · ".join(resumen_textos())[:140])
+
+    # En las demás tablas no hay nada que descontar: anunciarlo sería ruido.
+    sel(panel.combo_tabla, "personas")
+    bombear()
+    consultar()
+    bombear()
+    check(not any("calle o en tránsito" in t for t in resumen_textos()),
+          "en personas el resumen no lo menciona",
+          " · ".join(resumen_textos())[:140])
 
     # ─────────────────────────────────────────────────────────────────────────
     seccion("T · Documentación conceptual del INE en el tooltip")

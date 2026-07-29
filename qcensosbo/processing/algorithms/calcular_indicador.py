@@ -150,12 +150,20 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
         try:
             from ...core.query_engine import get_parquet_urls, duckdb_available
             from ...core.aggregator import agregar_datos, agregar_expresion
+            from ...core.universos import universo_sql, cobertura_vivienda
         except ImportError:
             from qcensosbo.core.query_engine import get_parquet_urls, duckdb_available
             from qcensosbo.core.aggregator import agregar_datos, agregar_expresion
+            from qcensosbo.core.universos import universo_sql, cobertura_vivienda
 
         feedback.setProgress(5)
         urls = get_parquet_urls(anio, tabla)
+        # Qué filas de la tabla son su universo (ver core/universos.py). En
+        # viviendas descuenta los registros de personas en la calle o en tránsito.
+        universo = universo_sql(anio, tabla)
+        nota_universo = cobertura_vivienda(anio, tabla)
+        if nota_universo:
+            feedback.pushInfo(nota_universo)
         feedback.setProgress(10)
 
         if not duckdb_available():
@@ -167,10 +175,11 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
 
         if sql_expr:
             feedback.setProgressText("Ejecutando expresión SQL…")
-            df = agregar_expresion(urls, nivel, sql_expr)
+            df = agregar_expresion(urls, nivel, sql_expr, universo_tabla=universo)
         else:
             feedback.setProgressText("Consultando datos remotos…")
-            df = agregar_datos(urls, nivel, variable, agg, category)
+            df = agregar_datos(urls, nivel, variable, agg, category,
+                               universo_tabla=universo)
 
         feedback.setProgress(85)
         if feedback.isCanceled():

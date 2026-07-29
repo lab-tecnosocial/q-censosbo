@@ -49,7 +49,8 @@ def _con_nombres(df, nivel):
 
 def agregar_datos(paths_or_urls, nivel, variable="__count__",
                   agg="__count__", category=None, remote=False,
-                  departamento=None, municipio=None, area=None):
+                  departamento=None, municipio=None, area=None,
+                  universo_tabla=None):
     """
     Agrega datos censales por unidad geográfica.
 
@@ -63,26 +64,30 @@ def agregar_datos(paths_or_urls, nivel, variable="__count__",
       departamento (solo aplica a nivel municipal).
     - municipio: código nacional de 6 dígitos (obligatorio a nivel unidad).
     - area: "urbana" | "rural" (solo tablas de fichas).
+    - universo_tabla: condición SQL que define qué filas de la tabla forman su
+      universo, de `universos.universo_sql(anio, tabla)`. Imprescindible en la
+      tabla de viviendas: sin ella se cuentan registros que no son viviendas. No
+      es el «universo» del diccionario del INE (ver `get_var_universos()`).
 
     Retorna DataFrame [geo_code, geo_nombre, valor].
     """
     from .query_engine import aggregate_geo, pad_geo_code
 
     df = aggregate_geo(paths_or_urls, nivel, variable, agg, category,
-                       departamento, municipio, area)
+                       departamento, municipio, area, universo_tabla)
     return _con_nombres(pad_geo_code(df, nivel), nivel)
 
 
 def resumen_nacional(paths_or_urls, variable="__count__", agg="__count__",
                      category=None, remote=False, departamento=None,
-                     municipio=None, area=None):
+                     municipio=None, area=None, universo_tabla=None):
     """Valor de referencia (un escalar) del indicador, sin desagregar por geografía.
 
     `remote` se ignora (DuckDB lee local y remoto igual). Los filtros geográficos
     acotan la referencia al territorio elegido (departamental o municipal)."""
     from .query_engine import aggregate_national
     return aggregate_national(paths_or_urls, variable, agg, category,
-                              departamento, municipio, area)
+                              departamento, municipio, area, universo_tabla)
 
 
 def get_columns(path_or_url, remote=False):
@@ -331,7 +336,7 @@ def get_value_labels(anio, variable, tabla=None):
 
 
 def agregar_expresion(paths_or_urls, nivel, sql_expr, departamento=None,
-                      municipio=None, area=None):
+                      municipio=None, area=None, universo_tabla=None):
     """
     Agrega datos con una expresión SQL agregada.
 
@@ -346,16 +351,16 @@ def agregar_expresion(paths_or_urls, nivel, sql_expr, departamento=None,
             "Espera a que termine la instalación automática."
         )
     df = aggregate_custom_sql(paths_or_urls, nivel, sql_expr, departamento,
-                              municipio, area)
+                              municipio, area, universo_tabla)
     return _con_nombres(pad_geo_code(df, nivel), nivel)
 
 
 def resumen_expresion(paths_or_urls, sql_expr, departamento=None,
-                      municipio=None, area=None):
+                      municipio=None, area=None, universo_tabla=None):
     """Valor de referencia de una expresión agregada, sin desagregar por geografía."""
     from .query_engine import national_custom_sql
     return national_custom_sql(paths_or_urls, sql_expr, departamento,
-                               municipio, area)
+                               municipio, area, universo_tabla)
 
 
 def _find_col(df, candidates):

@@ -32,6 +32,7 @@ from qgis.PyQt.QtCore import Qt, pyqtSignal, QThread
 
 from ..core.data_loader import get_tables_for_year
 from ..core import fichas, log
+from ..core.universos import universo_sql, cobertura_vivienda
 from ..core.query_engine import (
     duckdb_available, install_duckdb,
     get_parquet_urls, get_first_url,
@@ -320,15 +321,21 @@ class CategoriesWorker(QThread):
     """
     done = pyqtSignal(list, int)
 
-    def __init__(self, urls, variable, token=0):
+    def __init__(self, urls, variable, token=0, universo_tabla=None):
         super().__init__()
         self.urls = urls
         self.variable = variable
         self.token = token
+        self.universo_tabla = universo_tabla
 
     def run(self):
         try:
-            self.done.emit(distinct_values(self.urls, self.variable), self.token)
+            # Con el universo de la tabla: si no, el combo ofrecería categorías
+            # que el mapa nunca va a mostrar (calle y tránsito en viviendas).
+            self.done.emit(
+                distinct_values(self.urls, self.variable,
+                                universo_tabla=self.universo_tabla),
+                self.token)
         except Exception:
             self.done.emit([], self.token)
 
@@ -357,6 +364,10 @@ class MapWorker(QThread):
         try:
             urls = get_parquet_urls(self.anio, self.tabla, self.departamento)
             unidad = UNIDAD_SG.get(self.nivel, "municipio")
+            # Qué filas de la tabla son su universo. En viviendas descuenta los
+            # registros de personas en la calle o en tránsito, que no son
+            # viviendas; en las demás tablas es None y no filtra nada.
+            universo = universo_sql(self.anio, self.tabla)
 
             # DuckDB consulta el parquet remoto sin descargar el archivo.
             if not duckdb_available():
@@ -374,13 +385,15 @@ class MapWorker(QThread):
                 self.progress.emit(20)
                 df = agregar_expresion(urls, self.nivel, self.sql_expr,
                                        departamento=self.departamento,
-                                       municipio=self.municipio, area=self.area)
+                                       municipio=self.municipio, area=self.area,
+                                       universo_tabla=universo)
                 self.status.emit("Calculando valor de referencia…")
                 self.progress.emit(85)
                 national = resumen_expresion(urls, self.sql_expr,
                                              departamento=self.departamento,
                                              municipio=self.municipio,
-                                             area=self.area)
+                                             area=self.area,
+                                             universo_tabla=universo)
                 self.progress.emit(95)
                 self.done.emit({"df": df, "national": national})
                 return
@@ -392,7 +405,8 @@ class MapWorker(QThread):
             df = agregar_datos(urls, self.nivel, self.variable,
                                self.agg, self.category,
                                departamento=self.departamento,
-                               municipio=self.municipio, area=self.area)
+                               municipio=self.municipio, area=self.area,
+                               universo_tabla=universo)
 
             # Valor de referencia (nacional, o del territorio filtrado)
             self.status.emit("Calculando valor de referencia…")
@@ -401,7 +415,8 @@ class MapWorker(QThread):
                                         self.category,
                                         departamento=self.departamento,
                                         municipio=self.municipio,
-                                        area=self.area)
+                                        area=self.area,
+                                        universo_tabla=universo)
 
             # El porcentaje se calcula sobre los casos válidos, así que hay que
             # poder decir cuál es ese universo (muchas preguntas del censo solo
@@ -412,7 +427,8 @@ class MapWorker(QThread):
                 self.progress.emit(90)
                 cobertura = variable_coverage(
                     urls, self.variable, departamento=self.departamento,
-                    municipio=self.municipio, area=self.area)
+                    municipio=self.municipio, area=self.area,
+                    universo_tabla=universo)
             self.progress.emit(95)
             self.done.emit({"df": df, "national": national,
                             "cobertura": cobertura})
@@ -1433,7 +1449,8 @@ class CensosBOPanel(QDockWidget):
             return
         self._cats_token += 1
         token = self._cats_token
-        w = CategoriesWorker(urls, variable, token=token)
+        w = CategoriesWorker(urls, variable, token=token,
+                             universo_tabla=universo_sql(anio, tabla))
         w.done.connect(
             lambda vals, tk: self._on_cats_loaded(vals, tk, anio, tabla, variable))
         self._cats_worker = w
@@ -1824,6 +1841,13 @@ class CensosBOPanel(QDockWidget):
         universo = self._universo_del_resultado(ctx)
         if universo:
             self._add_note(f"Pregunta aplicada a: {universo}.")
+
+        # Qué filas de la tabla se contaron. Distinto de lo anterior: eso es a
+        # quién se le hizo la pregunta, esto es qué es un caso. Solo sale en la
+        # tabla de viviendas, la única cuyo universo no son todas sus filas.
+        nota_universo = cobertura_vivienda(ctx["anio"], ctx["tabla"])
+        if nota_universo:
+            self._add_note(nota_universo)
 
         # Base de cálculo del porcentaje: es el dato que evita malinterpretar un
         # indicador cuya pregunta solo aplica a un subgrupo del censo.

@@ -399,7 +399,8 @@ def _close(con):
             log.aviso("No se pudo cerrar la conexión DuckDB", exc)
 
 
-def _filtered_from(urls, cols, departamento=None, municipio=None, area=None):
+def _filtered_from(urls, cols, departamento=None, municipio=None, area=None,
+                   universo_tabla=None):
     """Fragmento FROM parametrizado, con los filtros geográficos que apliquen.
 
     DuckDB acepta la lista de rutas/URLs como un único parámetro de
@@ -413,6 +414,14 @@ def _filtered_from(urls, cols, departamento=None, municipio=None, area=None):
       - `municipio` (código nacional de 6 dígitos) — necesario para el nivel de
         manzano/comunidad, donde el país entero son 268.604 unidades.
       - `area` ("urbana" | "rural") — solo en las tablas de fichas.
+      - `universo_tabla` — condición SQL ya construida que define qué filas de la
+        tabla forman su universo; es la primera en aplicarse. Viene de
+        `universos.universo_sql()`. Existe por la tabla de viviendas, que incluye
+        registros de personas censadas fuera de una vivienda (calle, tránsito) que
+        el INE no cuenta como viviendas: sin ella el plugin publicaría 4.490.488
+        viviendas en 2024 en vez de las 4.480.201 oficiales. No confundir con el
+        «universo» del diccionario del INE (a quién se le hizo cada pregunta), que
+        vive en `aggregator.get_var_universos()`.
 
     Los códigos se comparan como enteros (TRY_CAST) porque unas tablas los
     guardan con ceros a la izquierda y otras como número.
@@ -424,6 +433,11 @@ def _filtered_from(urls, cols, departamento=None, municipio=None, area=None):
     imun  = _pick_col(cols, _GEO_CANDIDATES["municipio"])
 
     conds, params = [], []
+
+    # El universo de la tabla va primero: define de qué estamos hablando, antes
+    # de cualquier recorte que pida el usuario.
+    if universo_tabla:
+        conds.append(universo_tabla)
 
     if municipio:
         code = str(municipio).zfill(6)
@@ -500,7 +514,8 @@ def _detect_geo_col(con, url, nivel):
     return _pick_col(cols, _GEO_CANDIDATES.get(nivel, [])) or _geo_col(nivel)
 
 
-def _build_geo_parts(con, urls, nivel, departamento=None, municipio=None, area=None):
+def _build_geo_parts(con, urls, nivel, departamento=None, municipio=None, area=None,
+                     universo_tabla=None):
     """
     Retorna (src_clause, geo_select_sql, group_col, params). `src_clause` lleva
     placeholder(s) `?` y `params` los valores correspondientes (ver _filtered_from).
@@ -513,7 +528,8 @@ def _build_geo_parts(con, urls, nivel, departamento=None, municipio=None, area=N
     Fallback: archivos 2024 particionados que aún no tengan columna idep → extrae
     el departamento del nombre de archivo virtual de DuckDB.
 
-    Los filtros (`departamento`, `municipio`, `area`) se aplican vía _filtered_from.
+    Los filtros (`departamento`, `municipio`, `area`) y el `universo_tabla` se
+    aplican vía _filtered_from.
     """
     cols = _describe_cols(con, urls[0])
     idep = _pick_col(cols, _GEO_CANDIDATES["departamento"])
@@ -522,12 +538,22 @@ def _build_geo_parts(con, urls, nivel, departamento=None, municipio=None, area=N
         codigo = _pick_col(cols, ["codigo", "cod_unidad", "id_unidad"])
         if not codigo:
             raise ValueError(NO_UNIDAD_MSG)
-        src, params = _filtered_from(urls, cols, departamento, municipio, area)
+        src, params = _filtered_from(urls, cols, departamento, municipio, area,
+                                     universo_tabla)
         return src, f"CAST({codigo} AS VARCHAR) AS geo_code", "geo_code", params
 
     # Fallback para archivos particionados sin columna idep (ya vienen filtrados
     # por departamento desde get_parquet_urls, así que no re-filtramos aquí).
     if not idep and _is_dept_partitioned(urls):
+        # Este camino no pasa por _filtered_from, así que perdería el universo de
+        # la tabla. Hoy no puede ocurrir (solo aplica a persona_dep*, y el
+        # universo solo existe para viviendas), pero fallar aquí es preferible a
+        # devolver un total silenciosamente mal: es el error que se corrigió.
+        if universo_tabla:
+            raise ValueError(
+                "No se puede aplicar el universo de la tabla en archivos "
+                "particionados sin columna de departamento."
+            )
         src = "read_parquet(?, filename=true)"
         params = [list(urls)]
         dep = "LPAD(regexp_extract(filename, 'persona_dep(\\d+)', 1), 2, '0')"
@@ -539,7 +565,8 @@ def _build_geo_parts(con, urls, nivel, departamento=None, municipio=None, area=N
                       f"LPAD(CAST({imun} AS VARCHAR), 2, '0')) AS geo_code")
         return src, geo_select, "geo_code", params
 
-    src, params = _filtered_from(urls, cols, departamento, municipio, area)
+    src, params = _filtered_from(urls, cols, departamento, municipio, area,
+                                 universo_tabla)
 
     if nivel == "departamento":
         geo = idep or _geo_col("departamento")
@@ -573,7 +600,8 @@ def _cat_filter_sql(var_expr, category):
 
 
 def aggregate_geo(urls, nivel, variable="__count__", agg="__count__",
-                  category=None, departamento=None, municipio=None, area=None):
+                  category=None, departamento=None, municipio=None, area=None,
+                  universo_tabla=None):
     """
     Agrega datos por unidad geográfica con DuckDB. `urls` pueden ser URLs
     remotas o rutas locales: read_parquet acepta ambas indistintamente.
@@ -581,11 +609,16 @@ def aggregate_geo(urls, nivel, variable="__count__", agg="__count__",
     Maneja tanto archivos históricos (con columna idep/imun) como archivos
     particionados del 2024 (sin columna idep, geo extraído del nombre de archivo).
     `departamento`, `municipio` y `area` restringen el territorio agregado.
+    `universo_tabla` es la condición que define qué filas de la tabla forman su
+    universo (`universos.universo_sql(anio, tabla)`). Ojo: es otra cosa que el
+    «universo» del diccionario del INE, que dice a quién se le hizo una pregunta.
+    Quien consulte la tabla de viviendas debe pasarla, o contará registros que no
+    son viviendas.
     Retorna DataFrame [geo_code, valor].
     """
     con = _make_con(urls)
     src, geo_select, group, params = _build_geo_parts(
-        con, urls, nivel, departamento, municipio, area)
+        con, urls, nivel, departamento, municipio, area, universo_tabla)
 
     if agg == "__count__":
         if category is not None:
@@ -683,15 +716,22 @@ def _national_value_sql(variable, agg, category):
 
 def aggregate_national(urls, variable="__count__", agg="__count__",
                        category=None, departamento=None, municipio=None,
-                       area=None):
+                       area=None, universo_tabla=None):
     """Valor de referencia (un escalar, sin desagregar por geografía) vía DuckDB.
 
     `urls` pueden ser URLs remotas o rutas locales. Los filtros geográficos
     acotan la referencia al territorio elegido (departamental o municipal en vez
-    de nacional)."""
+    de nacional).
+    `universo_tabla` es la condición que define qué filas de la tabla forman su
+    universo (`universos.universo_sql(anio, tabla)`). Ojo: es otra cosa que el
+    «universo» del diccionario del INE, que dice a quién se le hizo una pregunta.
+    Quien consulte la tabla de viviendas debe pasarla, o contará registros que no
+    son viviendas.
+    """
     con = _make_con(urls)
     cols = _describe_cols(con, urls[0])
-    src, params = _filtered_from(urls, cols, departamento, municipio, area)
+    src, params = _filtered_from(urls, cols, departamento, municipio, area,
+                                 universo_tabla)
     expr = _national_value_sql(variable, agg, category)
     where = "" if agg in ("__count__", "pct_category") else f" WHERE {variable} IS NOT NULL"
     try:
@@ -703,7 +743,8 @@ def aggregate_national(urls, variable="__count__", agg="__count__",
         _close(con)
 
 
-def variable_coverage(urls, variable, departamento=None, municipio=None, area=None):
+def variable_coverage(urls, variable, departamento=None, municipio=None, area=None,
+                      universo_tabla=None):
     """(n_total, n_validos) de una variable en el territorio consultado.
 
     El porcentaje de una categoría se calcula sobre los casos válidos, así que el
@@ -719,7 +760,8 @@ def variable_coverage(urls, variable, departamento=None, municipio=None, area=No
     con = _make_con(urls)
     try:
         cols = _describe_cols(con, urls[0])
-        src, params = _filtered_from(urls, cols, departamento, municipio, area)
+        src, params = _filtered_from(urls, cols, departamento, municipio, area,
+                                     universo_tabla)
         row = con.execute(
             f"SELECT COUNT(*), COUNT({variable}) FROM {src}", params).fetchone()
         return (int(row[0]), int(row[1])) if row else (None, None)
@@ -730,7 +772,7 @@ def variable_coverage(urls, variable, departamento=None, municipio=None, area=No
 
 
 def distinct_values(urls, variable, limit=60, departamento=None, municipio=None,
-                    area=None):
+                    area=None, universo_tabla=None):
     """Valores distintos de una variable, ordenados, como lista de strings.
 
     Respaldo para las variables categóricas que el diccionario de etiquetas no
@@ -743,7 +785,8 @@ def distinct_values(urls, variable, limit=60, departamento=None, municipio=None,
     con = _make_con(urls)
     try:
         cols = _describe_cols(con, urls[0])
-        src, params = _filtered_from(urls, cols, departamento, municipio, area)
+        src, params = _filtered_from(urls, cols, departamento, municipio, area,
+                                     universo_tabla)
         rows = con.execute(
             f"SELECT DISTINCT CAST({variable} AS VARCHAR) AS v FROM {src} "
             f"WHERE {variable} IS NOT NULL ORDER BY v LIMIT {int(limit) + 1}",
@@ -757,7 +800,7 @@ def distinct_values(urls, variable, limit=60, departamento=None, municipio=None,
 
 
 def national_custom_sql(urls, sql_expr, departamento=None, municipio=None,
-                        area=None):
+                        area=None, universo_tabla=None):
     """Igual que aggregate_national, pero con una expresión agregada libre.
 
     Es la referencia de las fichas (cuyo indicador ya viene como expresión) y del
@@ -765,7 +808,8 @@ def national_custom_sql(urls, sql_expr, departamento=None, municipio=None,
     """
     con = _make_con(urls)
     cols = _describe_cols(con, urls[0])
-    src, params = _filtered_from(urls, cols, departamento, municipio, area)
+    src, params = _filtered_from(urls, cols, departamento, municipio, area,
+                                 universo_tabla)
     try:
         row = con.execute(f"SELECT ({sql_expr}) AS v FROM {src}", params).fetchone()
         return row[0] if row else None
@@ -813,7 +857,7 @@ def normalize_code(s):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def aggregate_custom_sql(urls, nivel, sql_expr, departamento=None,
-                         municipio=None, area=None):
+                         municipio=None, area=None, universo_tabla=None):
     """
     Agrega datos con una expresión SQL libre.
 
@@ -830,7 +874,7 @@ def aggregate_custom_sql(urls, nivel, sql_expr, departamento=None,
     """
     con = _make_con(urls)
     src, geo_select, group, params = _build_geo_parts(
-        con, urls, nivel, departamento, municipio, area)
+        con, urls, nivel, departamento, municipio, area, universo_tabla)
 
     sql = f"""
         SELECT {geo_select},

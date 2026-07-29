@@ -105,9 +105,17 @@ copia local.
 - **2012**: no incluye la tabla de **mortalidad**.
 - **Manzano/Comunidad**: solo **CPV-2024**, y solo en las tablas de fichas (en los microdatos la
   unidad es la persona o la vivienda, no el manzano).
-- El total de **viviendas** de la tabla de unidades da un 0,23 % menos que la tabla de viviendas
-  de microdatos: el INE las cuenta distinto en el geoportal. Para el total de viviendas de un
-  territorio conviene usar la tabla **Viviendas**.
+- **La tabla de Viviendas cuenta el universo oficial del INE, no todas sus filas.** La tabla de
+  viviendas del censo incluye registros de personas censadas *fuera* de una vivienda —en la calle
+  y en tránsito—, que el INE no cuenta como viviendas en ningún tabulado: son 10.287 de los
+  4.490.488 registros de 2024. El plugin los descuenta, así que un total de viviendas de 2024 da
+  **4.480.201**, la cifra oficial. Los censos anteriores traen la misma categoría con otro nombre
+  (1992 *Ambulante*, 2001 *Transeúntes*, 2012 *En tránsito* y *Persona que vive en la calle*); en
+  1976 no se preguntó. El resumen del resultado lo declara cuando aplica.
+- Con eso, el total de **viviendas** de la tabla de unidades (geoportal) y el de la tabla de
+  **Viviendas** (microdatos) **coinciden exactamente**, municipio a municipio. Cualquiera de las
+  dos sirve. (Hasta la v0.5.0 diferían un 0,23 % y aquí se decía que «el INE las cuenta distinto
+  en el geoportal»: era falso, la diferencia eran esos registros de calle y tránsito.)
 - **Cartografía municipal completa (343)**: los mapas municipales de 2024 y 2001 se pintan al
   100 %. Los cuatro municipios autónomos indígenas creados desde 2016 —TIOC-Raqaypampa,
   San Pedro de Macha, TIOC-Jatun Ayllu Yura y TIOC-Territorio Indígena Multiétnico— ya tienen su
