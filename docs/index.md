@@ -17,18 +17,21 @@ te avisa de las actualizaciones.
 - **Consulta remota y veloz**: lee los microdatos en formato Parquet alojados en GitHub Releases
   usando DuckDB; una agregación transfiere unos pocos MB en vez del archivo completo.
 - **Indicadores por departamento o municipio**: conteo, media, mediana, suma, desviación
-  estándar, **moda** (categoría más frecuente) y **porcentaje de una categoría** (calculado sobre
-  los casos con dato, y el panel dice cuántos son).
+  estándar, **moda** (categoría más frecuente) y **porcentaje de una categoría** con sus **dos
+  denominadores** —entre los casos con dato, que es el que reproduce las cifras del INE, o sobre
+  todos los registros—, diciendo siempre cuál está en juego y cuánto vale el otro.
 - **Manzanos y comunidades del CPV-2024**: 268.604 unidades censales con los 194 indicadores de
   la ficha resumen del INE (245 opciones, contando las que suman ambos sexos), para mapas
   intraurbanos de a un municipio.
 - **Reconoce el tipo de variable** (categórica o numérica) desde el diccionario oficial y
   muestra **etiquetas legibles** (p. ej. `1 → Quechua`) en vez de códigos.
 - **Filtro por tema y universo de la pregunta**: las variables se acotan por tema del catálogo del
-  INE —o por bloque en las fichas—, y el plugin dice a quién se le hizo cada pregunta (`personas de
-  7 años o más`), que es lo que evita leer un porcentaje sobre el denominador equivocado. El tooltip
-  trae la documentación oficial de 445 variables: qué mide, la pregunta en campo y, en las
-  derivadas, cómo se calcularon.
+  INE —o por bloque en las fichas—, y el plugin dice a quién se le hizo cada pregunta: el universo
+  declarado (`personas de 7 años o más`) **y los saltos del cuestionario**, porque hay preguntas que
+  no se hacen a todo su universo y eso explica los casos sin dato. El tooltip trae la documentación
+  oficial de 445 variables: qué mide, la pregunta en campo y, en las derivadas, cómo se calcularon.
+- **Aviso de celdas frágiles**: cuenta las unidades que calculan su valor sobre menos de 5 casos y
+  pone el tamaño de muestra de cada una en la capa, para poder filtrar o etiquetar el mapa.
 - **Densidad por km²**: una casilla convierte cualquier conteo o suma en densidad, con la superficie
   que declara la cartografía del censo.
 - **Mapas coropléticos** con leyenda apropiada y un **resumen del resultado** que indica el
