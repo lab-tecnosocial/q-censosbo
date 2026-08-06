@@ -41,10 +41,6 @@ Desde QGIS, en *Complementos → Administrar e instalar complementos…*, busca 
 instálalo. Está en el [repositorio oficial de complementos](https://plugins.qgis.org/plugins/qcensosbo/),
 así que también recibirás los avisos de actualización.
 
-Como alternativa, puedes instalar el
-[ZIP](https://github.com/lab-tecnosocial/q-censosbo/releases/latest/download/qcensosbo.zip) con
-*Instalar a partir de ZIP*.
-
 Requisitos: QGIS ≥ 3.28, incluido QGIS 4, e internet. DuckDB se instala solo la primera vez.
 
 ## Documentación
