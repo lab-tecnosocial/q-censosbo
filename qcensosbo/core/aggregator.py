@@ -44,7 +44,13 @@ def _con_nombres(df, nivel):
         df["geo_nombre"] = df["geo_code"].map(nombres).fillna(df["geo_code"])
     else:
         df["geo_nombre"] = df["geo_code"]
-    return df[["geo_code", "geo_nombre", "valor"]]
+    # `casos` viaja si el motor lo trajo. El modo SQL libre no puede saber cuántos
+    # registros hay detrás de una expresión arbitraria, así que ahí no viene y todo
+    # lo que lo consume tiene que tolerar su ausencia.
+    columnas = ["geo_code", "geo_nombre", "valor"]
+    if "casos" in df.columns:
+        columnas.append("casos")
+    return df[columnas]
 
 
 def agregar_datos(paths_or_urls, nivel, variable="__count__",
@@ -57,8 +63,10 @@ def agregar_datos(paths_or_urls, nivel, variable="__count__",
     - paths_or_urls: list[str]
     - nivel: "departamento" | "municipio" | "unidad" (manzano/comunidad)
     - variable: nombre de columna o "__count__"
-    - agg: "__count__" | "mean" | "sum" | "pct_category"
-    - category: valor de categoría (str) cuando agg="pct_category"
+    - agg: "__count__" | "mean" | "sum" | "median" | "std" | "mode" |
+      "pct_category" (% sobre los casos con dato, el que reproduce las cifras del
+      INE) | "pct_total" (% sobre todos los registros del universo de la tabla)
+    - category: valor de categoría (str) cuando agg es uno de los dos porcentajes
     - remote: ignorado (DuckDB lee local y remoto igual); se conserva por compat.
     - departamento: código "01"…"09" para filtrar la agregación a ese
       departamento (solo aplica a nivel municipal).
@@ -336,12 +344,16 @@ def get_value_labels(anio, variable, tabla=None):
 
 
 def agregar_expresion(paths_or_urls, nivel, sql_expr, departamento=None,
-                      municipio=None, area=None, universo_tabla=None):
+                      municipio=None, area=None, universo_tabla=None,
+                      casos_expr=None):
     """
     Agrega datos con una expresión SQL agregada.
 
     La usan el modo SQL avanzado del panel y los indicadores de ficha (que se
     declaran como expresión en `fichas.py`). Requiere DuckDB.
+
+    `casos_expr` da el tamaño de muestra por unidad cuando se conoce (los
+    indicadores de ficha lo declaran; una expresión libre no).
     """
     from .query_engine import aggregate_custom_sql, duckdb_available, pad_geo_code
 
@@ -351,7 +363,7 @@ def agregar_expresion(paths_or_urls, nivel, sql_expr, departamento=None,
             "Espera a que termine la instalación automática."
         )
     df = aggregate_custom_sql(paths_or_urls, nivel, sql_expr, departamento,
-                              municipio, area, universo_tabla)
+                              municipio, area, universo_tabla, casos_expr)
     return _con_nombres(pad_geo_code(df, nivel), nivel)
 
 

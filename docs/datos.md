@@ -124,9 +124,24 @@ copia local.
   blancas que se veían entre municipios al hacer zoom.
   Al mapear **censos anteriores a 2012** puede haber códigos que no existen en la división actual: el
   panel lo avisa en el resumen y el algoritmo de Processing lo registra en el log.
-- **Porcentaje de una categoría**: se calcula sobre los **casos con dato** de la variable, no sobre
-  todos los registros (77 de las 119 columnas de 2024/personas tienen menos del 99 % de cobertura,
-  porque la pregunta solo aplica a un subgrupo). El resumen indica siempre cuántos casos entraron
-  en el denominador.
+- **Porcentaje de una categoría: hay dos, y la diferencia es el denominador.** No es un detalle
+  técnico, es lo que decide el número que publicas:
+    - *entre los casos con dato* — deja fuera los registros sin respuesta. Es lo que totaliza una
+      tabulación del INE, así que **es el que reproduce sus cifras** y por eso viene por defecto.
+    - *sobre todos los registros* — divide por todo el territorio, tenga dato o no. Es el que
+      responde «qué parte de los habitantes…», contando a quien no recibió la pregunta.
+
+    En la pregunta 45 del CPV-2024 (¿atendió cultivos?) en Santiváñez, la misma categoría da
+    **35,11 %** con el primero y **19,50 %** con el segundo. Los dos son correctos; el error es no
+    saber cuál se pidió. El resumen dice siempre cuál está en juego y cuánto vale el otro, y con
+    «sobre todos los registros» avisa de que ese número no es comparable con una cifra del INE.
+    Contexto: 77 de las 119 columnas de 2024/personas tienen menos del 99 % de cobertura, porque la
+    pregunta solo aplica a un subgrupo.
+- **Las celdas frágiles se marcan, no se suprimen.** Cuando una unidad calcula su valor sobre menos
+  de 5 casos, el resumen lo cuenta y la capa trae el campo `casos_censo` con el tamaño de muestra de
+  cada unidad, que puedes usar para filtrar o etiquetar. No se oculta nada: el INE publica los
+  microdatos completos —de ahí salen estos datos—, así que esconder una celda de tres casos no
+  protegería a nadie, mientras que la advertencia de fiabilidad sí faltaba. Los conteos no llevan
+  aviso: ahí el valor **es** el número de casos, y un conteo de tres es exacto.
 - Los códigos pueden venir con ceros a la izquierda en los datos (`"028"`) y sin ellos en el
   diccionario (`"28"`); el plugin los empareja correctamente.

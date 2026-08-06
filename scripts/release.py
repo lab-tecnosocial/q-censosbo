@@ -91,6 +91,34 @@ def check_changelog(new_ver):
         )
 
 
+def check_metadata_parseable():
+    """Exige que `metadata.txt` se pueda leer con configparser, como hace QGIS.
+
+    La interpolación de configparser trata `%` como el inicio de una referencia, así
+    que **un porcentaje literal impide parsear el archivo entero**. El gestor de
+    complementos lo lee igual, de modo que un `%` en el changelog no es un detalle
+    de presentación: rompe la instalación del plugin.
+
+    Se descubrió escribiendo «35,11 % con el primero» en el changelog de la 0.6.0, y
+    lo cazó `qa_instalacion.py` sobre el ZIP. Esto lo caza antes, sin empaquetar.
+    Escribe «por ciento» en vez de `%` (ver dev-docs/empaquetado-ci.md).
+    """
+    import configparser
+
+    cfg = configparser.ConfigParser()
+    try:
+        cfg.read(METADATA, encoding="utf-8")
+        # `read()` no interpola: el error salta al leer el valor, como en QGIS.
+        for clave in cfg["general"]:
+            cfg["general"].get(clave)
+    except configparser.Error as exc:
+        abort(
+            f"metadata.txt no se puede parsear como lo hace QGIS: {exc}\n"
+            "  Si el mensaje habla de interpolación, hay un «%» literal en el "
+            "archivo (normalmente en el changelog): escribe «por ciento»."
+        )
+
+
 def check_syntax():
     py_files = [
         *ROOT.glob("qcensosbo/*.py"),
@@ -134,6 +162,10 @@ def main():
 
     print("3/6 Verificando el changelog…")
     check_changelog(new_ver)
+    # Va aquí y no antes: el changelog es lo que más se edita a mano, y un «%»
+    # literal ahí impide parsear metadata.txt entero (también en el gestor de
+    # complementos de QGIS).
+    check_metadata_parseable()
 
     print("4/6 Actualizando metadata.txt…")
     write_version(new_ver)

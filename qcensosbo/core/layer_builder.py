@@ -159,6 +159,64 @@ def _capas_dir():
     return path
 
 
+# Por debajo de este número de casos, el valor de una unidad no se puede leer como
+# un dato: es una anécdota con dos decimales.
+#
+# El plugin **marca, no suprime**. Ocultar una celda de tres casos no protegería a
+# nadie —el INE publica los microdatos completos, y de ahí salen estos Parquet—,
+# mientras que la advertencia de fiabilidad sí falta. Así que el número de casos
+# viaja como campo de la capa (`casos_censo`): entra en la tabla de atributos, en el
+# GeoJSON y en el GPKG exportados, y se puede usar para filtrar o etiquetar.
+CASOS_FRAGIL = 5
+
+
+def _lookup_casos(df_agregado):
+    """{geo_code: casos} si el motor trajo la columna, o None.
+
+    El modo SQL libre no puede saber cuántos registros hay detrás de una expresión
+    arbitraria: ahí no viene la columna y la capa simplemente no lleva el campo.
+    """
+    if "casos" not in getattr(df_agregado, "columns", ()):
+        return None
+    salida = {}
+    for _, r in df_agregado.iterrows():
+        valor = r["casos"]
+        try:
+            salida[str(r["geo_code"])] = None if valor != valor else int(valor)
+        except (TypeError, ValueError):
+            salida[str(r["geo_code"])] = None
+    return salida
+
+
+def unidades_fragiles(df_agregado, umbral=CASOS_FRAGIL):
+    """Cuántas unidades CON VALOR lo calculan sobre menos de `umbral` casos.
+
+    Devuelve (n_fragiles, n_con_valor). Solo cuentan las unidades que tienen un
+    valor: una con cero casos no es un dato frágil, es un dato ausente, y el
+    resumen ya la cuenta aparte. Sin esa distinción el aviso se infla —en Pando,
+    con `p52_pais_mov_cod`, 12 de 15 municipios en vez de los 3 que de verdad
+    muestran un número apoyado en pocos casos—.
+
+    (0, 0) cuando no hay columna `casos`, para que quien avise no tenga que
+    distinguir «ninguna es frágil» de «no se sabe».
+    """
+    if "casos" not in getattr(df_agregado, "columns", ()):
+        return 0, 0
+    fragiles = con_valor = 0
+    for _, r in df_agregado.iterrows():
+        valor, n = r["valor"], r["casos"]
+        if valor is None or valor != valor:            # NaN != NaN
+            continue
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            continue
+        con_valor += 1
+        if n < umbral:
+            fragiles += 1
+    return fragiles, con_valor
+
+
 def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
                departamento=None, is_categorical=False, clasificacion="jenks",
                value_labels=None):
@@ -183,6 +241,7 @@ def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
     lookup = {str(r["geo_code"]): r["valor"] for _, r in df_agregado.iterrows()}
     nombres = {str(r["geo_code"]): r.get("geo_nombre", r["geo_code"])
                for _, r in df_agregado.iterrows()}
+    casos = _lookup_casos(df_agregado)
 
     with open(geo_path, encoding="utf-8") as f:
         geojson = json.load(f)
@@ -201,6 +260,8 @@ def crear_capa(df_agregado, nivel, nombre_capa, iface=None,
         props["valor_censo"] = lookup.get(code)
         props["nombre_geo"] = nombres.get(
             code, props.get("nombre_dep", props.get("nombre_mun", code)))
+        if casos is not None:
+            props["casos_censo"] = casos.get(code)
         feature["properties"] = props
         features_out.append(feature)
 
@@ -450,7 +511,7 @@ def _estilo_contexto(layer):
         log.aviso("No se pudo aplicar el estilo a la capa de contexto", exc)
 
 
-def _capa_memoria_unidades(geoms, lookup, area):
+def _capa_memoria_unidades(geoms, lookup, area, casos=None):
     """Capa temporal en memoria con las geometrías WKB de un área.
 
     Las unidades sin dato entran con `valor_censo` nulo: así el mapa muestra el
@@ -470,6 +531,11 @@ def _capa_memoria_unidades(geoms, lookup, area):
     fields.append(QgsField("nombre_geo", TIPO_TEXTO))
     fields.append(QgsField("area", TIPO_TEXTO))
     fields.append(QgsField("valor_censo", TIPO_DECIMAL))
+    # El tamaño de muestra de cada unidad. Es el nivel donde más falta: un manzano
+    # puede tener tres personas, y sin este campo su valor se lee igual que el de
+    # uno de mil. Se declara siempre, aunque venga vacío, para que la tabla de
+    # atributos no cambie de forma entre consultas.
+    fields.append(QgsField("casos_censo", TIPO_DECIMAL))
     layer.dataProvider().addAttributes(fields)
     layer.updateFields()
 
@@ -482,8 +548,10 @@ def _capa_memoria_unidades(geoms, lookup, area):
         f = QgsFeature(layer.fields())
         f.setGeometry(geom)
         valor = lookup.get(str(codigo))
+        n = (casos or {}).get(str(codigo))
         f.setAttributes([str(codigo), str(nombre or ""), area_lbl,
-                         None if valor is None else float(valor)])
+                         None if valor is None else float(valor),
+                         None if n is None else float(n)])
         feats.append(f)
 
     layer.dataProvider().addFeatures(feats)
@@ -556,6 +624,7 @@ def crear_capa_unidades(df_agregado, geoms, nombre_capa, iface=None,
     from qgis.core import QgsProject, QgsVectorLayer
 
     lookup = {str(r["geo_code"]): r["valor"] for _, r in df_agregado.iterrows()}
+    casos = _lookup_casos(df_agregado)
     presentes = [a for a in ("urbana", "rural") if geoms.get(a)]
     if not presentes:
         raise RuntimeError(
@@ -567,7 +636,7 @@ def crear_capa_unidades(df_agregado, geoms, nombre_capa, iface=None,
 
     capas = []
     for i, area in enumerate(presentes):
-        mem, tabla = _capa_memoria_unidades(geoms[area], lookup, area)
+        mem, tabla = _capa_memoria_unidades(geoms[area], lookup, area, casos)
         _escribir_gpkg(mem, out_path, tabla, primera=(i == 0))
         etiqueta = nombre_capa if len(presentes) == 1 else f"{nombre_capa} · {tabla}"
         capa = QgsVectorLayer(f"{out_path}|layername={tabla}", etiqueta, "ogr")

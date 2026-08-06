@@ -163,12 +163,18 @@ class MapWorkerFake(QThread):
     done = pyqtSignal(object)
     error = pyqtSignal(str)
     ultimo = None
+    ultimo_casos_expr = "(sin llamar)"
 
     def __init__(self, anio, tabla, nivel, variable, agg, category,
-                 departamento=None, sql_expr=None, municipio=None, area=None):
+                 departamento=None, sql_expr=None, municipio=None, area=None,
+                 casos_expr=None):
         super().__init__()
         self.key = (anio, tabla, nivel, variable, agg, category, departamento,
                     municipio, area, sql_expr)
+        # No entra en la clave: el tamaño de muestra no cambia qué datos pide el
+        # panel, solo si puede avisar de las celdas frágiles. Se guarda para poder
+        # comprobar desde los tests que los indicadores de ficha lo declaran.
+        MapWorkerFake.ultimo_casos_expr = casos_expr
 
     def start(self):
         MapWorkerFake.ultimo = self.key
@@ -369,7 +375,9 @@ try:
     sel(panel.combo_tabla, "personas")
     esperado = {
         "p26_edad": ("numeric", ["mean", "median", "sum", "std"]),
-        "p25_sexo": ("categorical", ["pct_category", "mode"]),
+        # Los dos porcentajes van juntos y primero: solo se diferencian en el
+        # denominador (ver PCT_OPCIONES en el panel).
+        "p25_sexo": ("categorical", ["pct_category", "pct_total", "mode"]),
     }
     for var, (tipo, aggs) in esperado.items():
         sel(panel.combo_variable, var)
@@ -854,6 +862,41 @@ try:
     else:
         print("    (el fixture no trae universos: regenéralo para probar esto)")
 
+    # ── Los saltos del cuestionario, la otra mitad del universo ──────────────
+    # El universo del diccionario es el filtro grueso; el resto de a quién llegó
+    # la pregunta está en el texto de las preguntas anteriores («1 Sí (PASE A
+    # P49)»). Sin esto, el panel dice "personas de 7 años o más" y deja creer que
+    # a las demás se les preguntó. Las cifras que lo justifican —los 3.531 «Sin
+    # dato» de la p45 predichos caso por caso— están en scripts/qa_redatam.py;
+    # aquí se comprueba lo que solo se ve desde el panel.
+    panel.combo_anio.setCurrentText("2024")
+    sel(panel.combo_tabla, "personas")
+    bombear()
+    if panel.combo_variable.findData("p45_agro") >= 0:
+        sel(panel.combo_variable, "p45_agro")
+        bombear()
+        desc = panel.lbl_var_desc.text()
+        check("no a todas" in desc,
+              "el panel avisa de que el cuestionario salta la p45",
+              desc.replace("\n", " · ")[:110])
+        ayuda = panel.combo_variable.property("ayuda") or ""
+        check("pregunta 43" in ayuda and "pregunta 44" in ayuda,
+              "y la ayuda de la variable dice qué preguntas la condicionan",
+              ayuda[-120:].replace("\n", " · "))
+        consultar()
+        nota = " ".join(resumen_textos())
+        check("dentro de ese universo" in nota and "pregunta 43" in nota,
+              "el resumen junta el universo declarado y los saltos")
+        # Una variable sin saltos no debe inventarse ninguno.
+        if panel.combo_variable.findData("p26_edad") >= 0:
+            sel(panel.combo_variable, "p26_edad")
+            bombear()
+            check("no a todas" not in panel.lbl_var_desc.text(),
+                  "una variable sin saltos no anuncia ninguno",
+                  panel.lbl_var_desc.text()[:70])
+    else:
+        print("    (el fixture no trae p45_agro: regenéralo para probar esto)")
+
     # Las fichas son agregados del INE por unidad, no preguntas: sin universo.
     sel(panel.combo_tabla, "fichas")
     bombear()
@@ -895,6 +938,106 @@ try:
     check(not any("calle o en tránsito" in t for t in resumen_textos()),
           "en personas el resumen no lo menciona",
           " · ".join(resumen_textos())[:140])
+
+    # ─────────────────────────────────────────────────────────────────────────
+    seccion("Q3 · Los dos denominadores del porcentaje (v0.6.0)")
+    # El mismo cruce da dos números correctos según qué haya en el denominador, y
+    # el error está en no decir cuál: en la p45 de Santiváñez son 35,11 % sobre los
+    # casos con dato y 19,50 % sobre todos los registros. Las cifras las fija
+    # scripts/qa_redatam.py; aquí, que el panel ofrezca las dos y las declare.
+    claves_pct = ("pct_category", "pct_total")
+    panel.combo_anio.setCurrentText("2024")
+    sel(panel.combo_tabla, "personas")
+    sel(panel.combo_nivel, "departamento")
+    sel(panel.combo_variable, "p25_sexo")
+    bombear()
+    ofrecidas = [panel.combo_agg.itemData(i) for i in range(panel.combo_agg.count())]
+    check(all(k in ofrecidas for k in claves_pct),
+          "el panel ofrece los dos denominadores", str(ofrecidas))
+    etiquetas = [panel.combo_agg.itemText(i) for i in range(panel.combo_agg.count())
+                 if panel.combo_agg.itemData(i) in claves_pct]
+    check(all("casos con dato" in e or "todos los registros" in e
+              for e in etiquetas),
+          "y el denominador está en la etiqueta, no solo en la documentación",
+          " | ".join(etiquetas))
+    check(ofrecidas[0] == "pct_category",
+          "el que reproduce las cifras del INE queda por defecto", str(ofrecidas[:1]))
+
+    # Cada medida declara su base de cálculo. La cobertura la trae el resultado
+    # (la calcula el worker), así que en vez de driblar la UI se llama al resumen
+    # con el par (registros, casos con dato) que se quiere probar: es lo que
+    # decide el texto, y así el caso con hueco no depende del fixture.
+    ctx_pct = dict(anio=2024, tabla="personas", nivel="departamento", depto=None,
+                   municipio=None, area=None, variable="p25_sexo",
+                   category="2", sql_expr=None, sql_libre=False, key=None)
+    for clave, esperado in (("pct_category", "casos con dato"),
+                            ("pct_total", "tengan dato o no")):
+        panel._show_result_summary(
+            {"df": FX["agg"][(2024, "personas", "departamento", "p25_sexo",
+                              "pct_category", "2", None, None, None, None)],
+             "national": None, "cobertura": (1000, 400)},
+            dict(ctx_pct, agg=clave))
+        bombear()
+        notas = " ".join(resumen_textos())
+        check(esperado in notas, f"[{clave}] el resumen declara su denominador",
+              notas[:170])
+        if clave == "pct_total":
+            check("NO es comparable" in notas,
+                  "y avisa de que ese porcentaje no es una cifra del INE",
+                  notas[:170])
+
+    # ─────────────────────────────────────────────────────────────────────────
+    seccion("Q4 · Celdas frágiles: se marcan, no se suprimen (v0.6.0)")
+    # A nivel de manzano hay unidades de dos o tres personas: un «50 %» sobre dos
+    # casos se copia igual que uno sobre dos mil. El plugin no oculta nada —el INE
+    # publica los microdatos completos—, cuenta las unidades afectadas y pone el
+    # tamaño de muestra de cada una en la capa.
+    from qcensosbo.core.layer_builder import CASOS_FRAGIL, unidades_fragiles
+    check(CASOS_FRAGIL == 5, "el umbral son 5 casos", str(CASOS_FRAGIL))
+
+    clave_fragil = (2024, "personas", "municipio", "p52_pais_mov_cod",
+                    "pct_category", "1", "09", None, None, None)
+    df_fragil = FX["agg"].get(clave_fragil)
+    if df_fragil is not None:
+        check("casos" in df_fragil.columns,
+              "el motor trae el tamaño de muestra de cada unidad",
+              str(list(df_fragil.columns)))
+        n_frag, n_val = unidades_fragiles(df_fragil)
+        check(n_frag > 0 and n_val > n_frag,
+              "en el peor caso del censo hay unidades frágiles y otras no",
+              f"{n_frag} de {n_val}")
+        check(n_val < len(df_fragil),
+              "las unidades sin casos no cuentan como frágiles (son sin dato)",
+              f"{n_val} con valor de {len(df_fragil)} filas")
+        # Y que el aviso salga en el resumen, con el nombre del campo de la capa.
+        # Se llama al resumen con este df a propósito: driblando la UI, la
+        # categoría que quedara elegida decidiría qué escenario del fixture
+        # responde, y lo que se prueba aquí es el aviso, no el enrutado.
+        panel._show_result_summary(
+            {"df": df_fragil, "national": None, "cobertura": (None, None)},
+            dict(anio=2024, tabla="personas", nivel="municipio", depto="09",
+                 municipio=None, area=None, variable="p52_pais_mov_cod",
+                 agg="pct_category", category="1", sql_expr=None,
+                 sql_libre=False, key=None))
+        bombear()
+        notas = " ".join(resumen_textos())
+        check("menos de 5 casos" in notas and "casos_censo" in notas,
+              "el resumen avisa y dice dónde está el número de casos",
+              notas[:170])
+    else:
+        print("    (el fixture no trae el escenario de Pando: regenéralo)")
+
+    # Un conteo no lleva aviso: su valor ES el número de casos, así que decir que
+    # son pocos sería ruido —y llamarlo poco fiable, falso: un conteo es exacto—.
+    sel(panel.combo_nivel, "departamento")
+    sel(panel.combo_depto, None)
+    sel(panel.combo_variable, dp.CONTEO_KEY)
+    bombear()
+    consultar()
+    bombear()
+    check(not any("menos de 5 casos" in t for t in resumen_textos()),
+          "un conteo no lleva aviso de fragilidad (el valor ya es el conteo)",
+          " · ".join(resumen_textos())[:120])
 
     # ─────────────────────────────────────────────────────────────────────────
     seccion("T · Documentación conceptual del INE en el tooltip")

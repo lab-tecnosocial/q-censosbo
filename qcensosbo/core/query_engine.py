@@ -46,6 +46,13 @@ NO_UNIDAD_MSG = (
     "CPV-2024 (no en los microdatos, cuya unidad es la persona o la vivienda)."
 )
 
+# Las dos agregaciones que dan el porcentaje de una categoría, que se diferencian
+# solo en el denominador (ver `aggregate_geo`). Van en una constante porque el
+# panel las trata igual en una docena de sitios —piden categoría, se formatean
+# como porcentaje, no filtran los nulos— y comparar contra una cadena en cada uno
+# es la forma segura de olvidarse de uno.
+PCT_AGGS = ("pct_category", "pct_total")
+
 
 def _try_duckdb():
     global _duckdb, _duckdb_checked
@@ -614,7 +621,16 @@ def aggregate_geo(urls, nivel, variable="__count__", agg="__count__",
     «universo» del diccionario del INE, que dice a quién se le hizo una pregunta.
     Quien consulte la tabla de viviendas debe pasarla, o contará registros que no
     son viviendas.
-    Retorna DataFrame [geo_code, valor].
+
+    Retorna DataFrame [geo_code, valor, casos].
+
+    `casos` es **cuántos registros hay detrás del valor de esa unidad**: el propio
+    conteo en las agregaciones de conteo, los valores no nulos en las numéricas y
+    la moda, y el denominador en los porcentajes. Sale en la misma consulta (un
+    agregado más, sin coste apreciable) porque un valor sin su tamaño de muestra no
+    se puede juzgar: a nivel de manzano hay unidades de dos o tres personas, y un
+    «50 %» sobre dos casos se copia igual que uno sobre dos mil. Ver
+    `layer_builder`, que lo escribe como campo de la capa.
     """
     con = _make_con(urls)
     src, geo_select, group, params = _build_geo_parts(
@@ -623,63 +639,81 @@ def aggregate_geo(urls, nivel, variable="__count__", agg="__count__",
     if agg == "__count__":
         if category is not None:
             sql = f"""
-                SELECT {geo_select}, COUNT(*) AS valor
+                SELECT {geo_select}, COUNT(*) AS valor, COUNT(*) AS casos
                 FROM {src}
                 WHERE {_cat_filter_sql(variable, category)}
                 GROUP BY {group}
             """
         else:
             sql = f"""
-                SELECT {geo_select}, COUNT(*) AS valor
+                SELECT {geo_select}, COUNT(*) AS valor, COUNT(*) AS casos
                 FROM {src} GROUP BY {group}
             """
     elif agg == "mean":
         sql = f"""
             SELECT {geo_select},
-                   ROUND(AVG(TRY_CAST({variable} AS DOUBLE)), 4) AS valor
+                   ROUND(AVG(TRY_CAST({variable} AS DOUBLE)), 4) AS valor,
+                   COUNT({variable}) AS casos
             FROM {src} WHERE {variable} IS NOT NULL GROUP BY {group}
         """
     elif agg == "sum":
         sql = f"""
             SELECT {geo_select},
-                   SUM(TRY_CAST({variable} AS DOUBLE)) AS valor
+                   SUM(TRY_CAST({variable} AS DOUBLE)) AS valor,
+                   COUNT({variable}) AS casos
             FROM {src} WHERE {variable} IS NOT NULL GROUP BY {group}
         """
     elif agg == "median":
         sql = f"""
             SELECT {geo_select},
-                   ROUND(MEDIAN(TRY_CAST({variable} AS DOUBLE)), 4) AS valor
+                   ROUND(MEDIAN(TRY_CAST({variable} AS DOUBLE)), 4) AS valor,
+                   COUNT({variable}) AS casos
             FROM {src} WHERE {variable} IS NOT NULL GROUP BY {group}
         """
     elif agg == "std":
         sql = f"""
             SELECT {geo_select},
-                   ROUND(STDDEV(TRY_CAST({variable} AS DOUBLE)), 4) AS valor
+                   ROUND(STDDEV(TRY_CAST({variable} AS DOUBLE)), 4) AS valor,
+                   COUNT({variable}) AS casos
             FROM {src} WHERE {variable} IS NOT NULL GROUP BY {group}
         """
     elif agg == "mode":
         sql = f"""
             SELECT {geo_select},
-                   MODE({variable}) AS valor
+                   MODE({variable}) AS valor,
+                   COUNT({variable}) AS casos
             FROM {src} WHERE {variable} IS NOT NULL GROUP BY {group}
         """
-    elif agg == "pct_category" and category is not None:
-        # Denominador = casos VÁLIDOS de la variable (COUNT(col) ignora los NULL),
-        # no COUNT(*). Muchas preguntas del censo solo aplican a un subconjunto
-        # (77 de las 119 columnas de 2024/personas tienen <99 % de cobertura), y
-        # dividir por el total de registros subestimaba el porcentaje —hasta 2,5×—
-        # además de ser incoherente con el resto de agregaciones, que ya filtran
-        # los NULL. Ver `variable_coverage` para informar del universo real.
+    elif agg in PCT_AGGS and category is not None:
+        # Los dos denominadores de un porcentaje de categoría. No hay uno correcto:
+        # hay uno correcto para cada pregunta, y lo que no se puede es no decir cuál.
+        #
+        #   pct_category → casos VÁLIDOS de la variable (COUNT(col) ignora los
+        #     NULL). Es lo que totaliza una tabulación de REDATAM, y por eso es el
+        #     que reproduce las cifras del INE: en la p45 de Santiváñez son 4.409
+        #     casos, no los 7.940 registros de la tabla. Muchas preguntas solo
+        #     aplican a un subconjunto (77 de las 119 columnas de 2024/personas
+        #     tienen <99 % de cobertura), y dividir por el total las subestima
+        #     —hasta 2,5×—.
+        #   pct_total → TODOS los registros del universo de la tabla. Es lo que se
+        #     quiere cuando la pregunta se lee como una proporción de la población
+        #     («qué parte de los habitantes atiende cultivos»), donde quien no
+        #     recibió la pregunta también cuenta.
+        #
+        # `variable_coverage` da los dos tamaños para que el resumen diga cuál se
+        # usó y cuánto vale el otro. Ver scripts/qa_redatam.py.
+        denominador = f"COUNT({variable})" if agg == "pct_category" else "COUNT(*)"
         sql = f"""
             SELECT {geo_select},
                    ROUND(100.0 * COUNT(CASE WHEN {_cat_filter_sql(variable, category)}
                                             THEN 1 END)
-                         / NULLIF(COUNT({variable}), 0), 2) AS valor
+                         / NULLIF({denominador}, 0), 2) AS valor,
+                   {denominador} AS casos
             FROM {src} GROUP BY {group}
         """
     else:
         sql = f"""
-            SELECT {geo_select}, COUNT(*) AS valor
+            SELECT {geo_select}, COUNT(*) AS valor, COUNT(*) AS casos
             FROM {src} GROUP BY {group}
         """
 
@@ -707,10 +741,12 @@ def _national_value_sql(variable, agg, category):
         return f"ROUND(STDDEV(TRY_CAST({v} AS DOUBLE)), 4)"
     if agg == "mode":
         return f"MODE({v})"
-    if agg == "pct_category" and category is not None:
-        # Mismo denominador que aggregate_geo: casos válidos, no todos los registros.
+    if agg in PCT_AGGS and category is not None:
+        # Mismos dos denominadores que aggregate_geo, o el valor de referencia no
+        # sería comparable con el del mapa.
+        denominador = f"COUNT({v})" if agg == "pct_category" else "COUNT(*)"
         return (f"ROUND(100.0 * COUNT(*) FILTER (WHERE {_cat_filter_sql(v, category)}) "
-                f"/ NULLIF(COUNT({v}), 0), 2)")
+                f"/ NULLIF({denominador}, 0), 2)")
     return "COUNT(*)"
 
 
@@ -733,7 +769,8 @@ def aggregate_national(urls, variable="__count__", agg="__count__",
     src, params = _filtered_from(urls, cols, departamento, municipio, area,
                                  universo_tabla)
     expr = _national_value_sql(variable, agg, category)
-    where = "" if agg in ("__count__", "pct_category") else f" WHERE {variable} IS NOT NULL"
+    where = ("" if agg in ("__count__",) + PCT_AGGS
+             else f" WHERE {variable} IS NOT NULL")
     try:
         row = con.execute(f"SELECT {expr} AS v FROM {src}{where}", params).fetchone()
         return row[0] if row else None
@@ -857,7 +894,8 @@ def normalize_code(s):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def aggregate_custom_sql(urls, nivel, sql_expr, departamento=None,
-                         municipio=None, area=None, universo_tabla=None):
+                         municipio=None, area=None, universo_tabla=None,
+                         casos_expr=None):
     """
     Agrega datos con una expresión SQL libre.
 
@@ -868,17 +906,24 @@ def aggregate_custom_sql(urls, nivel, sql_expr, departamento=None,
     La usa tanto el modo SQL avanzado del panel como los indicadores de ficha,
     que se declaran en `fichas.py` justamente como expresión agregada.
 
+    `casos_expr` es la expresión, también agregada, que da el tamaño de muestra de
+    cada unidad. Los indicadores de ficha la declaran (`fichas.sql_casos`); el modo
+    SQL avanzado no puede —el plugin no sabe qué cuenta una expresión arbitraria—, y
+    entonces la columna no sale y el aviso de celdas frágiles simplemente no
+    aparece. Es preferible a inventarse un tamaño de muestra.
+
     El plugin envuelve la expresión con el GROUP BY geográfico.
     `urls` pueden ser URLs remotas o rutas locales.
-    Retorna DataFrame [geo_code, valor].
+    Retorna DataFrame [geo_code, valor] y, si hay `casos_expr`, también `casos`.
     """
     con = _make_con(urls)
     src, geo_select, group, params = _build_geo_parts(
         con, urls, nivel, departamento, municipio, area, universo_tabla)
 
+    casos_select = f",\n               ({casos_expr}) AS casos" if casos_expr else ""
     sql = f"""
         SELECT {geo_select},
-               ({sql_expr}) AS valor
+               ({sql_expr}) AS valor{casos_select}
         FROM {src}
         GROUP BY {group}
     """

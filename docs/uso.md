@@ -148,6 +148,20 @@ escolaridad no es «de la población» si la pregunta solo se hizo a mayores de 
 resultado lo repite, para que quede en el mapa que publiques. No se muestra cuando el universo es el
 obvio (todas las personas, todas las viviendas): ahí solo sería ruido.
 
+**Y el universo declarado no es toda la historia: el cuestionario salta preguntas.** Cuando lo hace,
+el panel añade «y no a todas (ver la ayuda de la variable)» y el resumen lo explica entero:
+
+> Pregunta aplicada a: **personas de 7 años o más** — y, dentro de ese universo, no a quienes
+> respondieron «Sí» en la pregunta 43 («La semana pasada, ¿trabajó por un pago o ingreso?») ni «Sí»
+> en la pregunta 44 («…negocio propio o familiar»): el cuestionario les salta esta pregunta.
+
+Sin eso, «personas de 7 años o más» deja creer que a las demás se les preguntó, y no es así: en la
+pregunta 45 del CPV-2024 en Santiváñez hay 3.531 casos sin dato, y **solo 851 son menores de 7
+años**. Los otros 2.680 están dentro del universo declarado y no llegaron a la pregunta. El salto se
+lee del propio metadato del INE (el texto de las preguntas anteriores, con su «PASE A P49»), y
+predice esos casos sin dato uno por uno. Donde el INE no declara el salto, el plugin no inventa
+nada: solo aparece lo que está en el metadato.
+
 !!! warning "Ojo al comparar años"
     El INE movió el filtro de edad de varias preguntas entre censos. `nivel_edu`, por ejemplo, se
     construyó sobre personas de 6 años o más en 1992, 4 en 2001 y **19** en 2024. Si vas a comparar
@@ -185,7 +199,7 @@ tipo (ver [la tabla de abajo](#tipos-de-variable-y-agregaciones)).
 
 #### Categoría
 
-Solo con **Porcentaje de una categoría**: cuál de las categorías se va a mapear. Sale del
+Solo con las dos medidas de **% de una categoría**: cuál de las categorías se va a mapear. Sale del
 diccionario de etiquetas del censo, con el código y su significado. Si la variable no está en ese
 diccionario, el plugin lee los valores distintos del propio archivo.
 
@@ -220,7 +234,10 @@ El tipo proviene del diccionario oficial (`categorica` / `numerica` / `texto`):
 
 - **Conteo de registros** — cuántas personas o viviendas hay en cada unidad geográfica.
 - **Categórica** (p. ej. sexo, pueblo indígena):
-    - **Porcentaje de una categoría** — eliges una categoría y el mapa muestra su % por unidad.
+    - **% de una categoría — entre los casos con dato** — eliges una categoría y el mapa muestra su %
+      por unidad, sobre quienes respondieron. Es el que reproduce las cifras del INE.
+    - **% de una categoría — sobre todos los registros** — lo mismo, pero dividiendo por todo el
+      territorio. Ver [sobre qué se calcula el porcentaje](#sobre-que-se-calcula-el-porcentaje).
     - **Moda (categoría más frecuente)** — mapa por colores, con leyenda de etiquetas.
 - **Numérica** (p. ej. edad):
     - **Media**, **Mediana**, **Suma** y **Desviación estándar**.
@@ -235,24 +252,54 @@ resumen muestra **las mismas clases** que tendrá la leyenda del mapa.
 
 ### Sobre qué se calcula el porcentaje
 
-El **porcentaje de una categoría** se calcula sobre los **casos con dato**, no sobre todos los
-registros. Muchas preguntas del censo solo aplican a un subgrupo (mujeres en edad fértil,
-ocupados, quienes asisten a un centro educativo…), así que el resultado es «el % entre quienes
-respondieron». El resumen lo dice explícitamente:
+**Hay dos porcentajes de una categoría, y solo se diferencian en el denominador.** Es la decisión que
+más cambia un número publicable, así que está en el propio nombre de la medida:
 
-> *Calculado sobre 4.529.497 casos con dato (39,9% de 11.365.333 registros). El resto no
-> respondió o la pregunta no le aplica, y queda fuera del denominador.*
+| Medida | Denominador | Cuándo |
+|---|---|---|
+| **% de una categoría — entre los casos con dato** | los registros que respondieron esa pregunta | para reproducir una cifra del INE: es lo que totaliza una tabulación de REDATAM |
+| **% de una categoría — sobre todos los registros** | todos los registros del territorio | para leerlo como proporción de la población, contando a quien no recibió la pregunta |
 
-Son **dos cosas distintas y complementarias**, y conviene no confundirlas:
+Con la pregunta 45 del CPV-2024 (¿atendió cultivos?) en Santiváñez, la categoría «Sí» da **35,11 %**
+con el primero y **19,50 %** con el segundo. Ninguno está mal; el error es no saber cuál se pidió. El
+resumen lo dice siempre:
+
+> *Denominador: 4.409 casos con dato (55,5% de 7.940 registros). Es lo que totaliza una tabulación
+> del INE. El resto no respondió o la pregunta no le aplica, y queda fuera. Para incluirlo, usa «% de
+> una categoría — sobre todos los registros».*
+
+y con el segundo avisa de que ese número **no es comparable con una cifra publicada por el INE**.
+
+Muchas preguntas del censo solo aplican a un subgrupo (mujeres en edad fértil, ocupados, quienes
+asisten a un centro educativo…): 77 de las 119 columnas de 2024/personas tienen menos del 99 % de
+cobertura. De ahí que la diferencia entre los dos denominadores pueda ser enorme.
+
+Son **tres cosas distintas y complementarias**, y conviene no confundirlas:
 
 | | Qué dice | De dónde sale |
 |---|---|---|
-| **Se preguntó a** | El universo *de diseño*: a quién iba dirigida la pregunta en el cuestionario | El diccionario oficial del INE |
-| **Calculado sobre** | Los casos *con dato* que efectivamente entraron en el cálculo | Se cuenta en la consulta |
+| **Pregunta aplicada a** | El universo *de diseño*: a quién iba dirigida la pregunta, y a quién le saltó el cuestionario | El diccionario y el texto de las preguntas del INE |
+| **Denominador** | Los registros que efectivamente entraron en el cálculo | Se cuenta en la consulta |
+| **casos_censo** (campo de la capa) | El tamaño de muestra de *cada unidad* del mapa | Se cuenta en la consulta |
 
 El primero explica el segundo. Si una pregunta se hizo a personas de 7 años o más, es normal que los
 casos con dato sean bastante menos que el total de registros: el resto no es «no respuesta», es
-población fuera del universo.
+población fuera del universo —o gente a la que el cuestionario le saltó la pregunta—.
+
+### Celdas frágiles: cuándo no publicar el número
+
+Un «50 %» sobre dos casos se lee igual que uno sobre dos mil, y en un mapa de manzanos hay unidades
+de dos o tres personas. Cuando alguna unidad calcula su valor sobre **menos de 5 casos**, el resumen
+lo cuenta:
+
+> *⚠ 6 de 9 municipios (66,7%) calculan su valor sobre menos de 5 casos: ahí el dato es indicativo,
+> no publicable. El campo «casos_censo» de la capa trae el número de cada unidad.*
+
+El plugin **no oculta nada**: el INE publica los microdatos completos —de ahí salen estos datos—, así
+que esconder una celda de tres casos no protegería a nadie, mientras que la advertencia sí faltaba.
+Con el campo `casos_censo` puedes filtrar el mapa (`"casos_censo" >= 30`), etiquetar las unidades
+frágiles o excluirlas al exportar. Los **conteos no llevan aviso**: ahí el valor *es* el número de
+casos, y un conteo de tres es exacto, no poco fiable.
 
 Si una variable no tiene catálogo de categorías en el diccionario, el plugin lee sus valores
 distintos del propio archivo. Cuando ni así hay categorías (dominio demasiado grande, como una

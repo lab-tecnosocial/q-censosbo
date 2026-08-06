@@ -18,14 +18,19 @@ pesados. Basado en el trabajo del paquete de R [**censosbo**](https://github.com
 
 - Consulta los microdatos de forma remota y veloz con DuckDB.
 - Calcula indicadores por **departamento** o **municipio**: conteo, media, mediana, suma,
-  desviación, moda y porcentaje de una categoría (sobre los casos con dato).
+  desviación, moda y porcentaje de una categoría, con **los dos denominadores** —entre los casos con
+  dato (el que reproduce las cifras del INE) o sobre todos los registros—, diciendo siempre cuál está
+  en juego.
 - Mapea el CPV-2024 por **manzano urbano y comunidad rural**: 268.604 unidades censales con
   194 indicadores de la ficha del INE (245 opciones con las que suman ambos sexos), de a un
   municipio.
 - Reconoce variables categóricas y numéricas y muestra etiquetas legibles.
 - Acota las variables por **tema** del catálogo del INE (o por **bloque** en las fichas) y declara
-  **a quién se le hizo cada pregunta**, que es lo que decide si un resultado se puede leer como «de
-  la población». El tooltip trae la documentación oficial: qué mide y la pregunta tal como se leyó.
+  **a quién se le hizo cada pregunta** —el universo del diccionario **y los saltos del
+  cuestionario**—, que es lo que decide si un resultado se puede leer como «de la población». El
+  tooltip trae la documentación oficial: qué mide y la pregunta tal como se leyó.
+- Marca las **celdas frágiles**: cuenta las unidades que calculan su valor sobre menos de 5 casos y
+  pone el tamaño de muestra de cada una en el campo `casos_censo` de la capa.
 - Convierte cualquier conteo o suma en **densidad por km²** con una casilla.
 - Genera mapas coropléticos con leyenda apropiada y un resumen que anticipa las clases del mapa
   y declara lo que queda fuera del cálculo.

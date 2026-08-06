@@ -13,6 +13,36 @@ version=0.5.0
 # formulario de subida, así que no hay que redactarlo a mano en cada envío. Las
 # líneas continuadas van indentadas; la versión más reciente, arriba.
 changelog=
+    0.6.0
+    - El porcentaje de una categoría ahora tiene sus DOS denominadores, y el
+      resumen dice siempre cuál está en juego y cuánto vale el otro. «Entre los
+      casos con dato» es lo que totaliza una tabulación del INE y sigue siendo el
+      predeterminado; «sobre todos los registros» divide por todo el territorio,
+      tenga dato o no. En la pregunta 45 del CPV-2024 en Santiváñez, la misma
+      categoría da 35,11 por ciento con el primero y 19,50 con el segundo:
+      ninguno está mal, el error es no saber cuál se pidió. Con el segundo el
+      plugin avisa de que ese número no es comparable con una cifra del INE.
+    - El plugin ya no dice solo a quién iba dirigida cada pregunta: también dice a
+      quién le saltó el cuestionario. El universo del diccionario del INE es el
+      filtro grueso («personas de 7 años o más») y deja creer que a las demás se
+      les preguntó. En la p45 de Santiváñez hay 3.531 casos sin dato y solo 851 son
+      menores de 7 años: los otros 2.680 están dentro del universo declarado y no
+      llegaron a la pregunta. El salto se lee del propio metadato del INE y predice
+      esos casos uno por uno. Donde el INE no lo declara, el plugin no inventa nada.
+    - Las celdas frágiles se marcan. Cuando una unidad calcula su valor sobre menos
+      de 5 casos, el resumen lo cuenta y la capa trae el campo «casos_censo» con el
+      tamaño de muestra de cada unidad, que sirve para filtrar o etiquetar el mapa y
+      viaja en el GeoJSON y el GPKG exportados. No se oculta nada: el INE publica
+      los microdatos completos, así que esconder una celda de tres casos no
+      protegería a nadie, mientras que la advertencia de fiabilidad sí faltaba. Los
+      conteos no llevan aviso, porque ahí el valor es el número de casos y un conteo
+      de tres es exacto.
+    - Nueva suite «qa_redatam.py» que fija los números contra el WebServer del INE,
+      no contra la coherencia interna del plugin: la tabulación de la pregunta 45 en
+      Santiváñez, que «Sin especificar» va dentro del denominador, que los saltos
+      del cuestionario explican los casos sin dato sin residuo, las celdas frágiles
+      en el peor caso del censo y los totales de población de los cinco censos.
+
     0.5.0
     - Compatible con QGIS 4 (Qt6) sin dejar de funcionar en QGIS 3.28: el tipo de
       los campos se resuelve según la versión (core/compat.py) y los enums de Qt

@@ -110,6 +110,27 @@ def sql_valor(tabla, variable, medida="total"):
     return f"SUM({expr})"
 
 
+def sql_casos(tabla, variable, medida="total"):
+    """Expresión SQL agregada para el tamaño de muestra de cada unidad.
+
+    Un indicador de ficha sobre un manzano de tres viviendas se lee igual que sobre
+    uno de trescientas si no se dice cuántas hay detrás, y este es el nivel donde
+    eso pasa: 268.604 unidades, muchas diminutas.
+
+    - `porcentaje` → el total del bloque, que es exactamente el denominador.
+    - `total`      → el propio conteo, que ya es el número de casos.
+
+    Devuelve None si el indicador no existe, para no romper una consulta por no
+    poder añadir un aviso.
+    """
+    r = indicador(tabla, variable)
+    if not r:
+        return None
+    if medida == "porcentaje" and r.get("denominador"):
+        return f"SUM({r['denominador']})"
+    return f"SUM({r['expr'] or r['variable']})"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Geometrías
 # ─────────────────────────────────────────────────────────────────────────────

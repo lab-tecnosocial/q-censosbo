@@ -90,6 +90,15 @@ ESCENARIOS = [
     (2024, "personas", "municipio", "p26_edad", "mean", None, "03", None, None),
     (2024, "viviendas", "departamento", "__count__", "__count__", None, None, None, None),
     (1976, "personas", "departamento", "__count__", "__count__", None, None, None, None),
+    # El segundo denominador del porcentaje (v0.6.0): el mismo cruce que la línea
+    # de `pct_category` de arriba, para poder comparar los dos números.
+    (2024, "personas", "departamento", "p25_sexo", "pct_total", "2", None, None, None),
+    # Celdas frágiles: `p52_pais_mov_cod` en Pando es el peor caso del censo
+    # (99,9 % «Sin dato»), y deja porcentajes calculados sobre 0 a 4 casos.
+    (2024, "personas", "municipio", "p52_pais_mov_cod", "pct_category", "1",
+     "09", None, None),
+    # La variable con saltos de cuestionario declarados, para el aviso de universo.
+    (2024, "personas", "departamento", "p45_agro", "pct_category", "1", None, None, None),
 ]
 
 # (tabla, variable, medida, nivel, municipio, area)
@@ -196,7 +205,9 @@ def main():
     candidatas = [v for v, t in fx["types"][(2024, "personas")].items()
                   if t in ("categorica", "texto")
                   and not fx["labels"].get((2024, v, "personas"))]
-    for v in candidatas + ["p57b_uhnacan", "p25_sexo"]:
+    # p45_agro va en la lista porque la prueba headless la usa para el aviso de
+    # saltos del cuestionario, y sin categorías el panel no dejaría consultarla.
+    for v in candidatas + ["p57b_uhnacan", "p25_sexo", "p45_agro"]:
         if (2024, "personas", v) in fx["distinct"]:
             continue
         fx["distinct"][(2024, "personas", v)] = distinct_values(urls_p, v)

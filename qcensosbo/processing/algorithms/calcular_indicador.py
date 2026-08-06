@@ -33,8 +33,11 @@ _ANIOS    = [2024, 2012, 2001, 1992, 1976]
 _TABLAS   = ["personas", "viviendas", "emigracion", "mortalidad"]
 _NIVELES  = ["departamento", "municipio"]
 _AGGS     = ["Conteo total", "Media", "Suma", "Mediana",
-             "Desviación estándar", "Moda", "% de categoría"]
-_AGG_KEYS = ["__count__", "mean", "sum", "median", "std", "mode", "pct_category"]
+             "Desviación estándar", "Moda",
+             "% de categoría (entre los casos con dato)",
+             "% de categoría (sobre todos los registros)"]
+_AGG_KEYS = ["__count__", "mean", "sum", "median", "std", "mode",
+             "pct_category", "pct_total"]
 
 
 class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
@@ -70,11 +73,16 @@ class CalcularIndicadorAlgorithm(QgsProcessingAlgorithm):
             "• Expresión SQL (opcional): fórmula DuckDB libre, ej. AVG(p26_edad)\n\n"
             "Si se escribe una Expresión SQL, los campos Variable y Agregación se ignoran. "
             "La expresión SQL requiere DuckDB (se instala automáticamente al abrir el plugin).\n\n"
-            "«% de categoría» se calcula sobre los CASOS VÁLIDOS de la variable "
-            "(los registros con valor nulo quedan fuera del denominador), igual que "
-            "el resto de agregaciones. Muchas preguntas del censo solo aplican a un "
-            "subgrupo, así que el resultado es el porcentaje entre quienes "
-            "respondieron, no entre toda la población.\n\n"
+            "Hay DOS «% de categoría», y la diferencia es el denominador:\n"
+            "• «entre los casos con dato» — deja fuera los registros con valor "
+            "nulo, igual que el resto de agregaciones. Es lo que totaliza una "
+            "tabulación del INE, así que es el que reproduce sus cifras.\n"
+            "• «sobre todos los registros» — divide por todo el territorio, "
+            "tenga dato o no. Es el que se quiere al leer la variable como una "
+            "proporción de la población.\n"
+            "Muchas preguntas del censo solo aplican a un subgrupo (el "
+            "cuestionario las salta), así que los dos números pueden diferir "
+            "mucho y ninguno está mal: hay que saber cuál se pidió.\n\n"
             "1976 solo admite el nivel departamental (ese censo usa cantón, no "
             "municipio). La cartografía municipal es la de los 343 municipios del "
             "CPV-2024, así que 2024 y 2001 se mapean completos; al usar censos "

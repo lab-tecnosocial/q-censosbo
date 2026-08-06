@@ -37,6 +37,7 @@ from ..core.query_engine import (
     duckdb_available, install_duckdb,
     get_parquet_urls, get_first_url,
     normalize_code, variable_coverage, distinct_values,
+    PCT_AGGS,
 )
 from ..core.aggregator import (
     agregar_datos, agregar_expresion, get_columns,
@@ -62,6 +63,19 @@ NO_VAR = ("__loading__", "__error__")
 # Opción "sin filtro" del selector de tema.
 TODOS_TEMAS = "__todos__"
 TODOS_TEMAS_LABEL = "Todos los temas"
+
+# Las dos formas de pedir el porcentaje de una categoría, con el denominador en la
+# etiqueta y no en la documentación: es lo único que distingue dos números que van
+# a salir los dos, y ninguno de los dos está mal.
+#
+# El primero es el que reproduce las cifras del INE (una tabulación de REDATAM
+# totaliza los casos con dato), así que es el que queda por defecto. El segundo es
+# el que se quiere al leer la variable como una proporción de la población, donde
+# quien no recibió la pregunta también cuenta.
+PCT_OPCIONES = (
+    ("% de una categoría — entre los casos con dato", "pct_category"),
+    ("% de una categoría — sobre todos los registros", "pct_total"),
+)
 
 
 def fmt_num(x, decimales=2, pct=False):
@@ -347,7 +361,8 @@ class MapWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, anio, tabla, nivel, variable, agg, category,
-                 departamento=None, sql_expr=None, municipio=None, area=None):
+                 departamento=None, sql_expr=None, municipio=None, area=None,
+                 casos_expr=None):
         super().__init__()
         self.anio = anio
         self.tabla = tabla
@@ -359,6 +374,9 @@ class MapWorker(QThread):
         self.sql_expr = sql_expr
         self.municipio = municipio
         self.area = area
+        # Solo los indicadores de ficha lo declaran; con una expresión libre no se
+        # puede saber cuántos registros hay detrás (ver fichas.sql_casos).
+        self.casos_expr = casos_expr
 
     def run(self):
         try:
@@ -386,7 +404,8 @@ class MapWorker(QThread):
                 df = agregar_expresion(urls, self.nivel, self.sql_expr,
                                        departamento=self.departamento,
                                        municipio=self.municipio, area=self.area,
-                                       universo_tabla=universo)
+                                       universo_tabla=universo,
+                                       casos_expr=self.casos_expr)
                 self.status.emit("Calculando valor de referencia…")
                 self.progress.emit(85)
                 national = resumen_expresion(urls, self.sql_expr,
@@ -422,7 +441,7 @@ class MapWorker(QThread):
             # poder decir cuál es ese universo (muchas preguntas del censo solo
             # aplican a un subgrupo). Dos COUNT sobre una columna: barato.
             cobertura = (None, None)
-            if self.agg == "pct_category":
+            if self.agg in PCT_AGGS:
                 self.status.emit("Comprobando la base de cálculo…")
                 self.progress.emit(90)
                 cobertura = variable_coverage(
@@ -1092,7 +1111,13 @@ class CensosBOPanel(QDockWidget):
         if hay_desc:
             universo = self._var_universos.get(var)
             if universo and universo not in self._UNIVERSOS_OBVIOS:
-                self.lbl_var_desc.setText(f"{desc}\nSe preguntó a: {universo}.")
+                linea = f"Se preguntó a: {universo}"
+                # La frase completa de los saltos no cabe en una línea del panel:
+                # aquí solo se avisa de que existen, y el texto va en la ayuda de
+                # la variable y en el resumen del resultado.
+                if self._tiene_saltos(var):
+                    linea += ", y no a todas (ver la ayuda de la variable)"
+                self.lbl_var_desc.setText(f"{desc}\n{linea}.")
             else:
                 self.lbl_var_desc.setText(desc)
         self._actualizar_ayuda_variable(var)
@@ -1128,7 +1153,7 @@ class CensosBOPanel(QDockWidget):
 
         # Categoría: solo con "Porcentaje" sobre una categórica, y con opciones.
         mostrar_cat = (not sql and tipo == "categorical"
-                       and agg == "pct_category")
+                       and agg in PCT_AGGS)
         self.lbl_categoria.setVisible(mostrar_cat)
         self.combo_categoria.setVisible(mostrar_cat)
         if mostrar_cat and self.combo_categoria.count() == 0:
@@ -1161,7 +1186,7 @@ class CensosBOPanel(QDockWidget):
 
     def _on_agg_changed(self):
         if (self._current_var_type == "categorical"
-                and self.combo_agg.currentData() == "pct_category"):
+                and self.combo_agg.currentData() in PCT_AGGS):
             self._populate_categorias(self.combo_variable.currentData() or "")
         self._sync_controls()
         self._invalidate_result()
@@ -1288,7 +1313,7 @@ class CensosBOPanel(QDockWidget):
                 "__sql__", self.txt_sql.toPlainText().strip())
         variable = self.combo_variable.currentData() or "__count__"
         agg = self.combo_agg.currentData() or "__count__"
-        category = self.combo_categoria.currentData() if agg == "pct_category" else None
+        category = self.combo_categoria.currentData() if agg in PCT_AGGS else None
         return (anio, tabla, nivel) + geo + (variable, agg, category)
 
     def _on_consultar_clicked(self):
@@ -1312,6 +1337,7 @@ class CensosBOPanel(QDockWidget):
         agg = self.combo_agg.currentData() or "__count__"
         category = None
         sql_expr = None
+        casos_expr = None
 
         if self.chk_avanzado.isChecked():
             sql_expr = self.txt_sql.toPlainText().strip()
@@ -1326,7 +1352,7 @@ class CensosBOPanel(QDockWidget):
             if not variable or variable in NO_VAR:
                 self.iface.messageBar().pushWarning("Q-CensosBo", "Selecciona una variable.")
                 return
-            if agg == "pct_category":
+            if agg in PCT_AGGS:
                 category = self.combo_categoria.currentData()
                 if not category:
                     self.iface.messageBar().pushWarning(
@@ -1346,6 +1372,9 @@ class CensosBOPanel(QDockWidget):
                 except ValueError as exc:
                     self.iface.messageBar().pushWarning("Q-CensosBo", str(exc))
                     return
+                # El tamaño de muestra de cada unidad. Aquí es donde más falta:
+                # son 268.604 unidades y muchas son diminutas.
+                casos_expr = fichas.sql_casos(tabla, variable, agg)
 
         if self._map_worker and self._map_worker.isRunning():
             return
@@ -1360,7 +1389,8 @@ class CensosBOPanel(QDockWidget):
         self._set_consulta_busy(True)
         self._map_worker = MapWorker(anio, tabla, nivel, variable, agg, category,
                                      depto, sql_expr=sql_expr,
-                                     municipio=municipio, area=area)
+                                     municipio=municipio, area=area,
+                                     casos_expr=casos_expr)
         self._map_worker.progress.connect(self.progress_bar.setValue)
         self._map_worker.status.connect(self.lbl_progress.setText)
         self._map_worker.done.connect(
@@ -1526,8 +1556,7 @@ class CensosBOPanel(QDockWidget):
                                        self.combo_variable.currentData() or ""):
                 options.append(("% del total del bloque", "porcentaje"))
         elif var_type == "categorical":
-            options = [
-                ("Porcentaje de una categoría", "pct_category"),
+            options = list(PCT_OPCIONES) + [
                 ("Moda (categoría más frecuente)", "mode"),
             ]
         elif var_type == "numeric":
@@ -1539,8 +1568,7 @@ class CensosBOPanel(QDockWidget):
             ]
         elif var_type == "unknown":
             # Sin tipo declarado: se ofrecen todas y `_sync_controls` avisa.
-            options = [
-                ("Porcentaje de una categoría", "pct_category"),
+            options = list(PCT_OPCIONES) + [
                 ("Moda (categoría más frecuente)", "mode"),
                 ("Media",               "mean"),
                 ("Mediana",             "median"),
@@ -1561,19 +1589,22 @@ class CensosBOPanel(QDockWidget):
         deshabilitar_pct = (var_type in ("categorical", "unknown")
                             and self._sin_categorias())
         if deshabilitar_pct:
-            i = self.combo_agg.findData("pct_category")
-            if i >= 0:
-                item = self.combo_agg.model().item(i)
-                item.setEnabled(False)
-                self.combo_agg.setItemData(
-                    i, "Esta variable no tiene catálogo de categorías.",
-                    Qt.ItemDataRole.ToolTipRole)
+            for key in PCT_AGGS:
+                i = self.combo_agg.findData(key)
+                if i >= 0:
+                    self.combo_agg.model().item(i).setEnabled(False)
+                    self.combo_agg.setItemData(
+                        i, "Esta variable no tiene catálogo de categorías.",
+                        Qt.ItemDataRole.ToolTipRole)
 
         idx = self.combo_agg.findData(current)
-        if idx < 0 or (deshabilitar_pct and current == "pct_category"):
+        if idx < 0 or (deshabilitar_pct and current in PCT_AGGS):
             idx = 0
-        if deshabilitar_pct and self.combo_agg.itemData(idx) == "pct_category":
-            idx = 1 if self.combo_agg.count() > 1 else 0
+        # Con las dos medidas de porcentaje deshabilitadas hay que saltar por
+        # encima de las dos, no solo de la primera.
+        while (deshabilitar_pct and idx < self.combo_agg.count() - 1
+               and self.combo_agg.itemData(idx) in PCT_AGGS):
+            idx += 1
         self.combo_agg.setCurrentIndex(idx)
         self.combo_agg.blockSignals(False)
 
@@ -1838,9 +1869,9 @@ class CensosBOPanel(QDockWidget):
         # (censosbo 1.5.0+) y va antes de las cifras a propósito: un promedio de
         # escolaridad "de la población" que en realidad es de mayores de 19 años se
         # lee distinto. Solo aparece cuando el universo no es el obvio.
-        universo = self._universo_del_resultado(ctx)
-        if universo:
-            self._add_note(f"Pregunta aplicada a: {universo}.")
+        nota_pregunta = self._nota_universo(ctx)
+        if nota_pregunta:
+            self._add_note(nota_pregunta)
 
         # Qué filas de la tabla se contaron. Distinto de lo anterior: eso es a
         # quién se le hizo la pregunta, esto es qué es un caso. Solo sale en la
@@ -1850,16 +1881,37 @@ class CensosBOPanel(QDockWidget):
             self._add_note(nota_universo)
 
         # Base de cálculo del porcentaje: es el dato que evita malinterpretar un
-        # indicador cuya pregunta solo aplica a un subgrupo del censo.
+        # indicador cuya pregunta solo aplica a un subgrupo del censo. Se dice
+        # siempre cuál de los dos denominadores está en juego Y cuánto vale el
+        # otro, porque el número que sale es correcto con los dos y el lector no
+        # puede adivinar cuál se usó.
         n_total, n_validos = cobertura
-        if agg == "pct_category" and n_total and n_validos is not None:
+        if agg in PCT_AGGS and n_total and n_validos is not None:
             pctv = 100.0 * n_validos / n_total if n_total else 0.0
-            texto = (f"Calculado sobre {fmt_num(n_validos)} casos con dato "
-                     f"({fmt_num(pctv, pct=True)} de {fmt_num(n_total)} registros).")
-            if pctv < 95:
-                texto += (" El resto no respondió o la pregunta no le aplica, "
-                          "y queda fuera del denominador.")
+            if agg == "pct_category":
+                texto = (f"Denominador: {fmt_num(n_validos)} casos con dato "
+                         f"({fmt_num(pctv, pct=True)} de {fmt_num(n_total)} "
+                         f"registros). Es lo que totaliza una tabulación del INE.")
+                if pctv < 95:
+                    texto += (" El resto no respondió o la pregunta no le aplica, "
+                              "y queda fuera. Para incluirlo, usa «% de una "
+                              "categoría — sobre todos los registros».")
+            else:
+                texto = (f"Denominador: los {fmt_num(n_total)} registros del "
+                         f"territorio, tengan dato o no.")
+                if pctv < 95:
+                    texto += (f" Solo {fmt_num(n_validos)} tienen dato "
+                              f"({fmt_num(pctv, pct=True)}), así que este "
+                              f"porcentaje NO es comparable con una cifra "
+                              f"publicada por el INE: para eso, usa «% de una "
+                              f"categoría — entre los casos con dato».")
             self._add_note(texto)
+
+        # Celdas frágiles: cuántas unidades apoyan su valor en muy pocos casos. El
+        # plugin marca en vez de suprimir (ver CASOS_FRAGIL en layer_builder), así
+        # que aquí se cuentan y el número de casos de cada unidad va en el campo
+        # `casos_censo` de la capa.
+        self._add_nota_fragiles(df, unidad_pl, agg)
 
         if ctx["tabla"] in fichas.TABLAS:
             self._add_note(self._aviso_fichas(ctx))
@@ -1871,7 +1923,7 @@ class CensosBOPanel(QDockWidget):
                 f"se mapearán {n_map} de {len(df)}."
             )
 
-        pct = agg in ("pct_category", "porcentaje") and not sql_libre
+        pct = agg in PCT_AGGS + ("porcentaje",) and not sql_libre
 
         def fmt(x):
             return fmt_num(x, pct=pct)
@@ -1997,6 +2049,81 @@ class CensosBOPanel(QDockWidget):
             return None
         return universo
 
+    # Agregaciones cuyo valor ES el número de casos. Ahí el tamaño de muestra ya
+    # está a la vista en el mapa y en la tabla de atributos, así que avisar de él
+    # sería ruido —y llamarlo poco fiable sería falso: un conteo de tres es exacto—.
+    # El aviso existe para las medidas DERIVADAS, donde el denominador es invisible:
+    # un «50 %» sobre dos casos se lee igual que uno sobre dos mil.
+    _AGGS_VALOR_ES_CONTEO = ("__count__", "total")
+
+    def _add_nota_fragiles(self, df, unidad_pl, agg):
+        """Aviso de fiabilidad: cuántas unidades apoyan su valor en pocos casos.
+
+        No se suprime nada. El INE publica los microdatos completos —de ahí salen
+        estos Parquet—, así que ocultar una celda de tres casos no protegería a
+        nadie, mientras que la advertencia de fiabilidad sí falta. Se marca: el
+        aviso aquí, y el número de casos de cada unidad en el campo `casos_censo`
+        de la capa, que viaja en el GeoJSON y el GPKG exportados.
+        """
+        if agg in self._AGGS_VALOR_ES_CONTEO:
+            return
+        from ..core.layer_builder import CASOS_FRAGIL, unidades_fragiles
+        n_fragiles, n_con_casos = unidades_fragiles(df)
+        if not n_fragiles:
+            return
+        pct = 100.0 * n_fragiles / n_con_casos if n_con_casos else 0.0
+        self._add_note(
+            f"⚠ {fmt_num(n_fragiles)} de {fmt_num(n_con_casos)} {unidad_pl} "
+            f"({fmt_num(pct, pct=True)}) calculan su valor sobre menos de "
+            f"{CASOS_FRAGIL} casos: ahí el dato es indicativo, no publicable. "
+            f"El campo «casos_censo» de la capa trae el número de cada unidad."
+        )
+
+    def _tiene_saltos(self, var):
+        """Si el cuestionario salta esta pregunta para parte de su universo.
+
+        Lee el CSV empaquetado, sin red ni DuckDB, así que se puede llamar desde el
+        refresco de la interfaz. El año viene del combo porque esto corre antes de
+        que exista un resultado con su contexto.
+        """
+        from ..core.docs_vars import condiciones_previas
+        try:
+            anio = int(self.combo_anio.currentText())
+        except (TypeError, ValueError):
+            return False
+        return bool(condiciones_previas(anio, var, self.combo_tabla.currentData()))
+
+    def _nota_universo(self, ctx):
+        """A quién se le hizo la pregunta, en una frase, o `None`.
+
+        Junta las dos mitades del universo, que viven en campos distintos del
+        metadato del INE: el **declarado** («personas de 7 años o más», del
+        diccionario) y los **saltos del cuestionario** (del texto de las preguntas
+        anteriores). Declarar solo la primera miente por omisión: en la p45 del
+        CPV-2024, dos de cada tres «Sin dato» están dentro del universo declarado y
+        lo que les pasó es que el cuestionario les saltó la pregunta.
+
+        Se compone en un único sitio para que el aviso del resultado y la ayuda de
+        la variable no expliquen lo mismo de dos formas distintas.
+        """
+        if ctx.get("sql_libre"):
+            return None
+        from ..core.docs_vars import frase_condiciones
+        var = ctx.get("variable")
+        if not var or var in NO_VAR or var == CONTEO_KEY:
+            return None
+
+        universo = self._universo_del_resultado(ctx)
+        saltos = frase_condiciones(ctx["anio"], var, ctx["tabla"])
+        if universo and saltos:
+            return (f"Pregunta aplicada a: {universo} — y, dentro de ese "
+                    f"universo, {saltos}.")
+        if universo:
+            return f"Pregunta aplicada a: {universo}."
+        if saltos:
+            return f"Esta pregunta no se hizo a todos: {saltos}."
+        return None
+
     def _var_label(self, var, max_chars=52):
         """Nombre legible de una variable, con el nombre técnico entre paréntesis.
 
@@ -2045,9 +2172,13 @@ class CensosBOPanel(QDockWidget):
             "std":    f"Desv. estándar de {legible}",
             "mode":   f"Categoría más frecuente de {legible}",
         }
-        if agg == "pct_category":
+        if agg in PCT_AGGS:
             cat = self.combo_categoria.currentText() or str(ctx["category"])
             metric = f"% con «{cat}» en {legible}"
+            # El título tiene que distinguir las dos medidas: el mismo mapa con
+            # los dos denominadores da números distintos y ambos son correctos.
+            if agg == "pct_total":
+                metric += " (sobre todos los registros)"
         else:
             metric = templ.get(agg, legible)
         return f"{metric} — por {unidad}"
@@ -2071,7 +2202,7 @@ class CensosBOPanel(QDockWidget):
                 code = str(national)
                 lbl = norm.get(normalize_code(code))
                 return f"{code} — {lbl}" if lbl else code
-            es_pct = agg in ("pct_category", "porcentaje") and not sql_libre
+            es_pct = agg in PCT_AGGS + ("porcentaje",) and not sql_libre
             return fmt_num(national, pct=es_pct)
         except Exception:
             return str(national)
@@ -2180,7 +2311,8 @@ class CensosBOPanel(QDockWidget):
             agg_tag = {
                 "__count__": "cnt", "mean": "avg", "median": "med",
                 "sum": "sum", "std": "std", "mode": "mod",
-                "pct_category": "pct", "total": "tot", "porcentaje": "pct",
+                "pct_category": "pct", "pct_total": "pcttot",
+                "total": "tot", "porcentaje": "pct",
             }.get(agg, agg)
             base = f"{(variable or 'var')[:14]}_{agg_tag}"
             if self._densidad_activa():
